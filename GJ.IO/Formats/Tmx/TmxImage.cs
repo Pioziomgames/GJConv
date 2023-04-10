@@ -45,6 +45,10 @@ namespace TmxLib
         {
             Pixels = pixels;
         }
+        public TmxImage(Color[] pixels)
+        {
+            Pixels = pixels.ToList();
+        }
         public TmxImage(List<byte> pixelIndexes)
         {
             PixelIndexes = pixelIndexes;

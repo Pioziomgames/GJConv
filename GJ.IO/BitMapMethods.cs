@@ -79,29 +79,31 @@ namespace GJ.IO
                 default: Image.Save(Path,ImageFormat.Png); break;
             }
         }
-        public static List<Color> GetPixels(Bitmap image)
+        public static Color[] GetPixels(Bitmap image)
         {
-            List<Color> Colors = new List<Color>(image.Width * image.Height);
+            Color[] Colors = new Color[image.Width * image.Height];
             BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, image.PixelFormat);
             int pixelSize = Image.GetPixelFormatSize(image.PixelFormat) / 8;
             IntPtr pointer = data.Scan0;
+            int Width = image.Width;
+            Color[] Palette = image.Palette.Entries;
             if (image.PixelFormat == PixelFormat.Format8bppIndexed)
             {
-                for (int y = 0; y < image.Height; y++)
-                {
-                    for (int x = 0; x < image.Width; x++)
-                    {
-                        int offset = y * data.Stride + x;
-                        byte index = Marshal.ReadByte(pointer + offset);
-                        Colors.Add(image.Palette.Entries[index]);
-                    }
-                }
+                Parallel.For(0, image.Height, y =>
+                 {
+                     for (int x = 0; x < Width; x++)
+                     {
+                         int offset = y * data.Stride + x;
+                         byte index = Marshal.ReadByte(pointer + offset);
+                         Colors[y * Width + x] = Palette[index];
+                     }
+                 });
             }
             else if (image.PixelFormat == PixelFormat.Format4bppIndexed)
             {
-                for (int y = 0; y < image.Height; y++)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int x = 0; x < image.Width; x++)
+                    for (int x = 0; x < Width; x++)
                     {
                         int offset = y * data.Stride + x / 2;
                         byte b = Marshal.ReadByte(pointer + offset);
@@ -110,42 +112,42 @@ namespace GJ.IO
                             index = b & 0x0F;
                         else
                             index = (b & 0xF0) >> 4;
-                        Colors.Add(image.Palette.Entries[index]);
+                        Colors[y * Width + x] = Palette[index];
                     }
-                }
+                });
             }
             else if (image.PixelFormat == PixelFormat.Format1bppIndexed)
             {
-                for (int y = 0; y < image.Height; y++)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int x = 0; x < image.Width; x++)
+                    for (int x = 0; x < Width; x++)
                     {
                         int offset = y * data.Stride + x / 8;
                         byte b = Marshal.ReadByte(pointer + offset);
                         int index = (b >> (7 - (x % 8))) & 1;
-                        Colors.Add(image.Palette.Entries[index]);
+                        Colors[y * Width + x] = image.Palette.Entries[index];
                     }
-                }
+                });
             }
             else if (image.PixelFormat == PixelFormat.Format24bppRgb)
             {
                 byte[] pixelData = new byte[image.Height * data.Stride];
                 Marshal.Copy(pointer, pixelData, 0, pixelData.Length);
-                for (int y = 0; y < image.Height; y++)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int x = 0; x < image.Width; x++)
+                    for (int x = 0; x < Width; x++)
                     {
                         int offset = y * data.Stride + x * 3;
                         Color color = Color.FromArgb(pixelData[offset + 2], pixelData[offset + 1], pixelData[offset]);
-                        Colors.Add(color);
+                        Colors[y * Width + x] = color;
                     }
-                }
+                });
             }
             else if (image.PixelFormat == PixelFormat.Format16bppRgb565)
             {
-                for (int y = 0; y < image.Height; y++)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int x = 0; x < image.Width; x++)
+                    for (int x = 0; x < Width; x++)
                     {
                         int offset = y * data.Stride + x * 2;
                         ushort pixelValue = (ushort)Marshal.ReadInt16(pointer + offset);
@@ -156,15 +158,15 @@ namespace GJ.IO
                         g = (g << 2) | (g >> 4);
                         b = (b << 3) | (b >> 2);
                         Color pixelColor = Color.FromArgb(r, g, b);
-                        Colors.Add(pixelColor);
+                        Colors[y * Width + x] = pixelColor;
                     }
-                }
+                });
             }
             else if (image.PixelFormat == PixelFormat.Format16bppArgb1555)
             {
-                for (int y = 0; y < image.Height; y++)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int x = 0; x < image.Width; x++)
+                    for (int x = 0; x < Width; x++)
                     {
                         int offset = y * data.Stride + x * 2;
                         ushort pixelValue = (ushort)Marshal.ReadInt16(pointer + offset);
@@ -177,15 +179,15 @@ namespace GJ.IO
                         b = (b << 3) | (b >> 2);
                         int aScaled = a * 255;
                         Color pixelColor = Color.FromArgb(aScaled, r, g, b);
-                        Colors.Add(pixelColor);
+                        Colors[y * Width + x] = pixelColor;
                     }
-                }
+                });
             }
             else if (image.PixelFormat == PixelFormat.Format16bppRgb555)
             {
-                for (int y = 0; y < image.Height; y++)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int x = 0; x < image.Width; x++)
+                    for (int x = 0; x < Width; x++)
                     {
                         int offset = y * data.Stride + x * 2;
                         ushort pixelValue = (ushort)Marshal.ReadInt16(pointer + offset);
@@ -196,39 +198,36 @@ namespace GJ.IO
                         g = (g << 3) | (g >> 2);
                         b = (b << 3) | (b >> 2);
                         Color pixelColor = Color.FromArgb(r, g, b);
-                        Colors.Add(pixelColor);
+                        Colors[y * Width + x] = pixelColor;
                     }
-                }
+                });
             }
             else if (image.PixelFormat == PixelFormat.Format16bppGrayScale)
             {
-                if (image.PixelFormat == PixelFormat.Format16bppGrayScale)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int y = 0; y < image.Height; y++)
+                    for (int x = 0; x < Width; x++)
                     {
-                        for (int x = 0; x < image.Width; x++)
-                        {
-                            int offset = y * data.Stride + x * 2;
-                            ushort pixelValue = (ushort)Marshal.ReadInt16(pointer + offset);
-                            Color pixelColor = Color.FromArgb(pixelValue, pixelValue, pixelValue);
-                            Colors.Add(pixelColor);
-                        }
+                        int offset = y * data.Stride + x * 2;
+                        ushort pixelValue = (ushort)Marshal.ReadInt16(pointer + offset);
+                        Color pixelColor = Color.FromArgb(pixelValue, pixelValue, pixelValue);
+                        Colors[y * Width + x] = pixelColor;
                     }
-                }
+                });
             }
             else
             {
-                for (int y = 0; y < image.Height; y++)
+                Parallel.For(0, image.Height, y =>
                 {
-                    for (int x = 0; x < image.Width; x++)
+                    for (int x = 0; x < Width; x++)
                     {
                         int offset = y * data.Stride + x * pixelSize;
                         byte[] pixel = new byte[pixelSize];
                         Marshal.Copy(pointer + offset, pixel, 0, pixelSize);
                         Color color = Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]);
-                        Colors.Add(color);
+                        Colors[y * Width + x] = color;
                     }
-                }
+                });
             }
 
             image.UnlockBits(data);
@@ -303,7 +302,7 @@ namespace GJ.IO
                 default: Header.PixelFormat = Tim2BPP.RGBA8888; break;
             }
 
-            List<Color> Pixels = GetPixels(image);
+            Color[] Pixels = GetPixels(image);
             Tim2ImageData ImageData = new(Pixels);
             Tim2Picture OutputPic = new(Header, ImageData);
             if ((image.PixelFormat & PixelFormat.Indexed) == PixelFormat.Indexed)
@@ -788,7 +787,7 @@ namespace GJ.IO
             else if (image.PixelFormat == PixelFormat.Format24bppRgb)
                 Header.PixelFormat = TmxPixelFormat.PSMTC24;
 
-            List<Color> Pixels = GetPixels(image);
+            Color[] Pixels = GetPixels(image);
 
             TmxImage Image = new(Pixels);
 
@@ -825,11 +824,10 @@ namespace GJ.IO
             Level newLevel = new();
             newLevel.Frames = new();
 
-            List<Color> Pixels;
-                Pixels = GetPixels(image);
+            Color[] Pixels = GetPixels(image);
 
             Frame GimFrame = new();
-            GimFrame.Pixels = Pixels.ToArray();
+            GimFrame.Pixels = Pixels;
             newLevel.Frames.Add(GimFrame);
 
             List<Level> NewLevels = new();
@@ -862,7 +860,7 @@ namespace GJ.IO
             image.UnlockBits(data);
             return image;
         }
-        public static byte[] ConvertToIndexed(List<Color> pixels, out List<Color> Palette)
+        public static byte[] ConvertToIndexed(Color[] pixels, out List<Color> Palette)
         {
             var colorCounts = new ConcurrentDictionary<Color, int>();
 
@@ -873,7 +871,7 @@ namespace GJ.IO
 
             var sortedColors = colorCounts.Keys.OrderByDescending(color => colorCounts[color]).ToList();
 
-            var indexedPixels = new byte[pixels.Count];
+            var indexedPixels = new byte[pixels.Length];
 
             if (sortedColors.Count > 256)
             {
@@ -882,7 +880,7 @@ namespace GJ.IO
                 palette.Insert(1, Color.FromArgb(0, 0, 0));
                 Palette = palette;
 
-                Parallel.For(0, pixels.Count, i =>
+                Parallel.For(0, pixels.Length, i =>
                 {
                     Color pixelColor = pixels[i];
                     if (pixelColor.A <= 127)
@@ -902,7 +900,7 @@ namespace GJ.IO
                 var palette = sortedColors.ToList();
                 Palette = palette;
 
-                Parallel.For(0, pixels.Count, i =>
+                Parallel.For(0, pixels.Length, i =>
                 {
                     indexedPixels[i] = (byte)palette.IndexOf(pixels[i]);
                 });

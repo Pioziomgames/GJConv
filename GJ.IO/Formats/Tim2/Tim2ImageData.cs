@@ -46,6 +46,11 @@ namespace Tim2Lib
             Pixels = pixels;
             PixelIndexes = new();
         }
+        public Tim2ImageData(Color[] pixels)
+        {
+            Pixels = pixels.ToList();
+            PixelIndexes = new();
+        }
 
         public Tim2ImageData(List<byte> pixelIndexes)
         {
