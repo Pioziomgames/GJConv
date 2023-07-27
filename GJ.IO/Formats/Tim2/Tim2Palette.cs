@@ -27,7 +27,7 @@ namespace Tim2Lib
 
             for (int i = 0; i < Size; i++)
             {
-                Color NC = new Color();
+                Color NC = new();
                 if (CType == 1)
                     NC = ReadRGBA5551(reader);
                 else if (CType == 2)

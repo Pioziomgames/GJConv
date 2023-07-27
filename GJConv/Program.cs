@@ -1,7 +1,5 @@
-﻿using System.IO;
-using System.Drawing;
+﻿using System.Drawing;
 using static GJ.IO.BitMapMethods;
-using System.Reflection;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
@@ -9,7 +7,7 @@ namespace GJConv
 {
     internal class Program
     {
-        static string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GJConv.cfg");
+        static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GJConv.cfg");
         static Config config;
         static void Main(string[] args)
         {
@@ -25,6 +23,9 @@ namespace GJConv
             string OutputPath = string.Empty;
             bool uiNext = false;
             bool ucNext = false;
+            bool fwNext = false;
+            bool fhNext = false;
+            
             for (int i = 0; i < args.Length; i++)
             {
                 if (uiNext)
@@ -39,7 +40,26 @@ namespace GJConv
                 else if (ucNext)
                 {
                     ucNext = false;
+                    config.TmxUseFilenameForUserComment = false;
                     config.TmxUserComment = args[i];
+                }
+                else if (fwNext)
+                {
+                    if (!int.TryParse(args[i], out config.ForceWidth))
+                    {
+                        Console.WriteLine("Bad Args!");
+                        Info();
+                    }
+                    fwNext = false;
+                }
+                else if (fhNext)
+                {
+                    if (!int.TryParse(args[i], out config.ForceHeight))
+                    {
+                        Console.WriteLine("Bad Args!");
+                        Info();
+                    }
+                    fhNext = false;
                 }
                 else
                 {
@@ -54,6 +74,18 @@ namespace GJConv
                         uiNext = true;
                     else if (a == "-uc")
                         ucNext = true;
+                    else if (a == "-fw")
+                        fwNext = true;
+                    else if (a == "-fh")
+                        fhNext = true;
+                    else if (a == "-ls")
+                        config.LinearScaling = !config.LinearScaling;
+                    else if (a == "-f2")
+                        config.ForcePowerOfTwo = !config.ForcePowerOfTwo;
+                    else if (a == "-ls")
+                        config.TmxUseFilenameForUserComment = !config.TmxUseFilenameForUserComment;
+                    else if (a == "-po")
+                        config.GimPSPOrder = !config.GimPSPOrder;
                     else if (Enum.TryParse(a, out ImgType nExt))
                         config.DefaultOutputFormat = nExt;
                     else if (InputPath == string.Empty)
@@ -67,7 +99,7 @@ namespace GJConv
             if (OutputPath == string.Empty)
                 OutputPath = OutputPath = $"{Path.GetDirectoryName(InputPath)}\\{Path.GetFileNameWithoutExtension(InputPath)}.{config.DefaultOutputFormat}";
 
-            if (OutputPath.IndexOf('.') == -1)
+            if (!OutputPath.Contains('.'))
                 OutputPath += $".{config.DefaultOutputFormat}";
             if (!File.Exists(InputPath))
             {
@@ -76,6 +108,9 @@ namespace GJConv
                 Console.ReadKey();
                 return;
             }
+
+            if (config.TmxUseFilenameForUserComment)
+                config.TmxUserComment = Path.GetFileNameWithoutExtension(OutputPath);
             
 
             string se = Path.GetExtension(InputPath)[1..].ToLower();
@@ -91,17 +126,17 @@ namespace GJConv
                 ExportPixelFormat = image.PixelFormat; //Create a new image to allow for easier editing and free the lock on the input file
                 NewImage = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppArgb);
                 BitmapData data = NewImage.LockBits(new Rectangle(0, 0, NewImage.Width, NewImage.Height), ImageLockMode.WriteOnly, NewImage.PixelFormat);
-                List<Color> Colors = GetPixels(image);
+                Color[] Colors = GetPixels(image);
                 if (config.SwapRedAndBlue)
                 {
-                    Parallel.For(0, Colors.Count, i =>
+                    Parallel.For(0, Colors.Length, i =>
                     {
                          Colors[i] = Color.FromArgb(Colors[i].A, Colors[i].B, Colors[i].G, Colors[i].R);
                     });
                 }
 
-                byte[] pixels = new byte[Colors.Count * 4];
-                for (int i = 0; i < Colors.Count; i++)
+                byte[] pixels = new byte[Colors.Length * 4];
+                for (int i = 0; i < Colors.Length; i++)
                 {
                     int offset = i * 4;
                     pixels[offset] = Colors[i].B;
@@ -115,7 +150,7 @@ namespace GJConv
             }
             if (Ext == ImgType.png) //Workaround for System.Drawing converting pngs to 32 bits on import
             {
-                using (BinaryReader reader = new BinaryReader(new FileStream(InputPath, FileMode.Open)))
+                using (BinaryReader reader = new(new FileStream(InputPath, FileMode.Open)))
                 {
                     reader.BaseStream.Seek(12, SeekOrigin.Begin);
                     if (reader.ReadInt32() == 0x52444849) //IHDR
@@ -129,6 +164,51 @@ namespace GJConv
                     
                 }
             }
+
+            string se2 = Path.GetExtension(OutputPath)[1..].ToLower();
+            if (!Enum.TryParse(se2, out ImgType OExt))
+                OExt = config.DefaultOutputFormat;
+
+            if (OExt == ImgType.txn)
+            {
+                bool TooBig = false;
+                if (config.ForceWidth > 1024 || NewImage.Width > 1024)
+                {
+                    TooBig = true;
+                    config.ForceWidth = 1024;
+                }
+                if (config.ForceHeight > 1024 || NewImage.Height > 1024)
+                {
+                    TooBig = true;
+                    config.ForceHeight = 1024;
+                }
+                if (TooBig)
+                {
+                    Console.WriteLine("WARNING: Textures bigger than 1024 are not supported by the selected format");
+                    Console.WriteLine("your image will be downscaled.");
+                }
+                if (!config.ForcePowerOfTwo && (((config.ForceWidth > 0 && config.ForceWidth % 2 != 0) || (config.ForceWidth % 2 != 2 && config.ForceWidth > 0)) || (NewImage.Height % 2 != 0 || NewImage.Width % 2 != 0)))
+                {
+                    Console.WriteLine("WARNING: Images that are not a power of 2 are not supported by the selected format");
+                    Console.WriteLine("your image is going to be resized.");
+                    config.ForcePowerOfTwo = true;
+                }
+            }
+
+
+            if (config.ForceHeight > 0 || config.ForceWidth > 0)
+            {
+                if (config.ForceHeight <= 0)
+                    config.ForceHeight = NewImage.Height;
+                if (config.ForceWidth <= 0)
+                    config.ForceWidth = NewImage.Width;
+
+                NewImage = ResizeImage(NewImage, new Size(config.ForceWidth, config.ForceHeight), config.LinearScaling);
+            }
+
+
+            if (config.ForcePowerOfTwo == true)
+                NewImage = ForcePowerOfTwo(NewImage, config.LinearScaling);
 
             if (config.Solidify == true)
                 NewImage = Solidify(NewImage);
@@ -145,27 +225,30 @@ namespace GJConv
             if (ExportPixelFormat.HasFlag(PixelFormat.Indexed))
                 NewImage = LimitColors(NewImage);
 
-            string se2 = Path.GetExtension(OutputPath)[1..].ToLower();
-            if (!Enum.TryParse(se2, out ImgType OExt))
-                OExt = config.DefaultOutputFormat;
 
-            ExportBitmap(OutputPath,NewImage,OExt, config.TmxUserId, config.TmxUserComment, config.TmxUserTextureId, config.TmxUserClutId, config.TgaFlipHorizontal, config.TgaFlipVertical);
+            ExportBitmap(OutputPath,NewImage,OExt, config.TmxUserId, config.TmxUserComment, config.TmxUserTextureId, config.TmxUserClutId, config.TgaFlipHorizontal, config.TgaFlipVertical, config.GimPSPOrder);
             Console.WriteLine($"{OExt.ToString().ToUpper()} file exported to: {Path.GetFullPath(OutputPath)}");
         }
         static void Info()
         {
-            Console.WriteLine("GJConv 0.1 by Pioziomgames");
+            Console.WriteLine("GJConv 0.2 by Pioziomgames");
             Console.WriteLine("\nUsage:");
             Console.WriteLine("\tGJConv.exe {args} {inputfile} {outputfile}(optional) {outputformat}(optional)");
-            Console.WriteLine("\nAll arguments are changable in the config");
-            Console.WriteLine("Inputing Yes/No arguments will swap their value compared to the config");
+            Console.WriteLine("\nDefault values of all arguments are editable in the config file");
+            Console.WriteLine("Inputing Yes/No arguments will swap their value compared to the one in the config file");
             Console.WriteLine("\nArguments:");
-            Console.WriteLine("\t-so         \tSolidify              (" + (config.Solidify ? "on" : "off") + " by default)");
-            Console.WriteLine("\t-rb         \tSwap Red and Blue     (" + (config.SwapRedAndBlue ? "on" : "off") + " by default)");
-            Console.WriteLine("\t-id         \tConvert to indexed    (" + (config.ConvertToIndexed ? "on" : "off") + " by default)");
-            Console.WriteLine("\t-fc         \tConvert to full color (" + (config.ConvertToFullColor ? "on" : "off") + " by default)");
-            Console.WriteLine("\t-ui {short} \tTmx user id           (" + config.TmxUserId + " by default)");
-            Console.WriteLine("\t-uc {string}\tTmx user comment      (\"" + config.TmxUserComment + "\" by default)");
+            Console.WriteLine("\t-so         \tSolidify image                       (" + (config.Solidify ? "on" : "off") + " by default)");
+            Console.WriteLine("\t-rb         \tSwap Red and Blue channels           (" + (config.SwapRedAndBlue ? "on" : "off") + " by default)");
+            Console.WriteLine("\t-id         \tConvert image to indexed             (" + (config.ConvertToIndexed ? "on" : "off") + " by default)");
+            Console.WriteLine("\t-fc         \tConvert image to full color          (" + (config.ConvertToFullColor ? "on" : "off") + " by default)");
+            Console.WriteLine("\t-ls         \tUse Linear filtering for scaling     (" + (config.LinearScaling ? "on" : "off") + " by default)");
+            Console.WriteLine("\t-f2         \tForce size to be apower of two       (" + (config.ForcePowerOfTwo ? "on" : "off") + " by default)");
+            Console.WriteLine("\t-fw {int}   \tForce image width                    (" + (config.ForceWidth > 0? $"{config.ForceWidth}" : "off") + " by default)");
+            Console.WriteLine("\t-fh {int}   \tForce image height                   (" + (config.ForceHeight > 0 ? $"{config.ForceHeight}" : "off") + " by default)");
+            Console.WriteLine("\t-ui {short} \tTmx user id                          (" + config.TmxUserId + " by default)");
+            Console.WriteLine("\t-uc {string}\tTmx user comment (turns of filename) (\"" + config.TmxUserComment + "\" by default)");
+            Console.WriteLine("\t-uf         \tTmx use filename for user comment    (" + (config.TmxUseFilenameForUserComment ? "on" : "off") + " by default)");
+            Console.WriteLine("\t-po         \tGim export pixels in PSP order       (" + (config.GimPSPOrder ? "on" : "off") + " by default)");
 
             Console.WriteLine("\nPress any key to exit");
             Console.ReadKey();

@@ -127,13 +127,20 @@ namespace GimLib.Chunks
                 ImgInfo.BitsPerPixel = 16;
                 ImgInfo.Format = GimFormat.Index16;
             }
+            else if (Colors.Count <= int.MaxValue)
+            {
+                ImgInfo.BitsPerPixel = 32;
+                ImgInfo.Format = GimFormat.Index32;
+            }
             else
             {
-                throw new Exception("Indexes higher than 16 bits are not implemented");
+                throw new Exception("The image has too many colors to be indexed");
+                //throw new Exception("Indexes higher than 16 bits are not implemented");
             }
             
             Header.Height = 1;
             Header.Width = (ushort)Colors.Count;
+            Header.LevelType = GimType.MipMap2; //Palettes use MipMap2
             Frame palFrame = new();
             palFrame.Pixels = Colors.ToArray();
             Level palLevel = new();
@@ -249,14 +256,6 @@ namespace GimLib.Chunks
                     }
             }
         }
-        private static void WriteIndex2(uint Index, uint Index2, BinaryWriter writer)
-        {
-            byte output = (byte)Index2;
-            output |= (byte)(((byte)Index) >> 4);
-                
-            writer.Write(output);
-        }
-
         protected override void ReadData(ref GimChunkHeader Header, BinaryReader reader)
         {
             long Start = reader.BaseStream.Position;
@@ -272,9 +271,6 @@ namespace GimLib.Chunks
                 Level NewLevel = new();
                 NewLevel.Frames = new();
 
-                if (ImgInfo.Order == GimOrder.PSPImage)
-                    throw new Exception("PSPImage Order is not implemented");
-
                 for (int j = 0; j < ImgInfo.FrameCount; j++)
                 {
                     Frame NewFrame = new();
@@ -283,9 +279,9 @@ namespace GimLib.Chunks
                     if ((int)ImgInfo.Format > 7)
                     {
                         throw new Exception("DXT is currently not supported");
-                        if (ImgInfo.Format == GimFormat.DXT1 || ImgInfo.Format == GimFormat.DXT1EXT)
+                        /*if (ImgInfo.Format == GimFormat.DXT1 || ImgInfo.Format == GimFormat.DXT1EXT)
                         {
-                            NewFrame.Pixels = ReadDXT1(reader, ImgInfo.Width, ImgInfo.Height).ToArray();
+                            NewFrame.Pixels = ReadDXT1(reader, ImgInfo.Width, ImgInfo.Height);
                         }
                         else if (ImgInfo.Format == GimFormat.DXT3 || ImgInfo.Format == GimFormat.DXT3EXT)
                         {
@@ -294,75 +290,218 @@ namespace GimLib.Chunks
                         else if (ImgInfo.Format == GimFormat.DXT5 || ImgInfo.Format == GimFormat.DXT5EXT)
                         {
                             NewFrame.Pixels = ReadDXT5(reader, ImgInfo.Width, ImgInfo.Height).ToArray();
-                        }
+                        }*/
                     }
                     else if ((int)ImgInfo.Format > 3)
                     {
-                        List<uint> Pixs = new();
+                        NewFrame.PixelsIndex = new uint[ImgInfo.Width * ImgInfo.Height];
+
                         switch (ImgInfo.Format)
                         {
                             case GimFormat.Index4:
                                 {
-                                    int RowByteCount = (int)Math.Ceiling((double)(ImgInfo.Width / 2.0));
-                                    for (int row = 0; row < ImgInfo.Height; row++)
+                                    if (ImgInfo.Order == GimOrder.PSPImage)
                                     {
-                                        byte[] rowData = reader.ReadBytes(RowByteCount);
-                                        for (int col = 0; col < ImgInfo.Width; col += 2)
+                                        //A block has 16 bytes of width and 8 pixels of height
+                                        int blockWidth = 32; // Width of each block in pixels
+                                        int blockHeight = 8; // Height of each block in pixels
+
+                                        for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
                                         {
-                                            byte indexByte = rowData[col / 2];
-                                            uint index2 = (uint)((indexByte >> 4) & 0x0F);
-                                            uint index1 = (uint)(indexByte & 0x0F);
-                                            Pixs.Add(index1);
-                                            Pixs.Add(index2);
+                                            for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                            {
+                                                for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                                {
+                                                    for (int pixelCol = 0; pixelCol < blockWidth; pixelCol += 2)
+                                                    {
+                                                        int x = blockCol * blockWidth + pixelCol;
+                                                        int y = blockRow * blockHeight + pixelRow;
+
+                                                        int packedIndexes = reader.ReadByte();
+                                                        NewFrame.PixelsIndex[x + y * ImgInfo.Width] = (uint)packedIndexes & 0x0F;
+                                                        NewFrame.PixelsIndex[x + 1 + y * ImgInfo.Width] = (uint)(packedIndexes >> 4) & 0x0F;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        int index = 0;
+                                        int RowByteCount = (int)Math.Ceiling((double)(ImgInfo.Width / 2.0));
+                                        for (int row = 0; row < ImgInfo.Height; row++)
+                                        {
+                                            byte[] rowData = reader.ReadBytes(RowByteCount);
+                                            for (int col = 0; col < ImgInfo.Width; col += 2)
+                                            {
+                                                byte indexByte = rowData[col / 2];
+                                                uint index2 = (uint)((indexByte >> 4) & 0x0F);
+                                                uint index1 = (uint)(indexByte & 0x0F);
+                                                NewFrame.PixelsIndex[index] = index1;
+                                                NewFrame.PixelsIndex[index + 1] = index2;
+                                                index += 2;
+                                            }
                                         }
                                     }
                                     break;
                                 }
                             case GimFormat.Index8:
                                 {
-                                    for (int row = 0; row < ImgInfo.Height; row++)
+                                    if (ImgInfo.Order == GimOrder.PSPImage)
                                     {
-                                        for (int col = 0; col < ImgInfo.Width; col++)
+                                        //A block has 16 bytes of width and 8 pixels of height
+                                        int blockWidth = 16; // Width of each block in pixels
+                                        int blockHeight = 8; // Height of each block in pixels
+
+                                        for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
                                         {
-                                            Pixs.Add(reader.ReadByte());
+                                            for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                            {
+                                                for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                                {
+                                                    for (int pixelCol = 0; pixelCol < blockWidth; pixelCol++)
+                                                    {
+                                                        int x = blockCol * blockWidth + pixelCol;
+                                                        int y = blockRow * blockHeight + pixelRow;
+                                                        NewFrame.PixelsIndex[x + y * ImgInfo.Width] = reader.ReadByte();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        int index = 0;
+                                        for (int k = 0; k < ImgInfo.Height; k++)
+                                        {
+                                            for (int l = 0; l < ImgInfo.Width; l++)
+                                            {
+                                                NewFrame.PixelsIndex[index] = reader.ReadByte();
+                                                index++;
+                                            }
                                         }
                                     }
                                     break;
                                 }
                             case GimFormat.Index16:
                                 {
-                                    for (int row = 0; row < ImgInfo.Height; row++)
+                                    if (ImgInfo.Order == GimOrder.PSPImage)
                                     {
-                                        for (int col = 0; col < ImgInfo.Width; col++)
+                                        //A block has 16 bytes of width and 8 pixels of height
+                                        int blockWidth = 8; // Width of each block in pixels
+                                        int blockHeight = 8; // Height of each block in pixels
+
+                                        for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
                                         {
-                                            Pixs.Add(reader.ReadUInt16());
+                                            for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                            {
+                                                for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                                {
+                                                    for (int pixelCol = 0; pixelCol < blockWidth; pixelCol++)
+                                                    {
+                                                        int x = blockCol * blockWidth + pixelCol;
+                                                        int y = blockRow * blockHeight + pixelRow;
+                                                        NewFrame.PixelsIndex[x + y * ImgInfo.Width] = reader.ReadUInt16();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        int index = 0;
+                                        for (int k = 0; k < ImgInfo.Height; k++)
+                                        {
+                                            for (int l = 0; l < ImgInfo.Width; l++)
+                                            {
+                                                NewFrame.PixelsIndex[index] = reader.ReadUInt16();
+                                                index++;
+                                            }
                                         }
                                     }
                                     break;
                                 }
                             case GimFormat.Index32:
                                 {
-                                    for (int row = 0; row < ImgInfo.Height; row++)
+                                    if (ImgInfo.Order == GimOrder.PSPImage)
                                     {
-                                        for (int col = 0; col < ImgInfo.Width; col++)
+                                        //A block has 16 bytes of width and 8 pixels of height
+                                        int blockWidth = 4; // Width of each block in pixels
+                                        int blockHeight = 8; // Height of each block in pixels
+
+                                        for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
                                         {
-                                            Pixs.Add(reader.ReadUInt32());
+                                            for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                            {
+                                                for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                                {
+                                                    for (int pixelCol = 0; pixelCol < blockWidth; pixelCol++)
+                                                    {
+                                                        int x = blockCol * blockWidth + pixelCol;
+                                                        int y = blockRow * blockHeight + pixelRow;
+                                                        NewFrame.PixelsIndex[x + y * ImgInfo.Width] = reader.ReadUInt32();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        int index = 0;
+                                        for (int k = 0; k < ImgInfo.Height; k++)
+                                        {
+                                            for (int l = 0; l < ImgInfo.Width; l++)
+                                            {
+                                                NewFrame.PixelsIndex[index] = reader.ReadUInt32();
+                                                index++;
+                                            }
                                         }
                                     }
                                     break;
                                 }
                         }
-                        NewFrame.PixelsIndex = Pixs.ToArray();
                     }
                     else
                     {
-                        List<Color> Pixs = new();
-                        for (int k = 0; k < ImgInfo.Height; k++)
+                        NewFrame.Pixels = new Color[ImgInfo.Width * ImgInfo.Height];
+                        if (ImgInfo.Order == GimOrder.PSPImage) //PSP "Faster" Image order
                         {
-                            for (int l = 0; l < ImgInfo.Width; l++)
-                                Pixs.Add(ReadColor(reader));
+                            //A block has 16 bytes of width and 8 pixels of height
+                            int blockWidth = 8; // Width of each block in pixels
+                            // 16 / 2 (All non indexed formats besides 8888 are 2 bytes long)
+                            if (ImgInfo.Format == GimFormat.RGBA8888)
+                                blockWidth = 4; // 16 / 4 (8888 is 4 bytes long)
+
+                            int blockHeight = 8; // Height of each block in pixels
+
+                            for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
+                            {
+                                for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                {
+                                    for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                    {
+                                        for (int pixelCol = 0; pixelCol < blockWidth; pixelCol++)
+                                        {
+                                            int x = blockCol * blockWidth + pixelCol;
+                                            int y = blockRow * blockHeight + pixelRow;
+                                            NewFrame.Pixels[x + y * ImgInfo.Width] = ReadColor(reader);
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        NewFrame.Pixels = Pixs.ToArray();
+                        else
+                        {
+                            int index = 0;
+                            for (int k = 0; k < ImgInfo.Height; k++)
+                            {
+                                for (int l = 0; l < ImgInfo.Width; l++)
+                                {
+                                    NewFrame.Pixels[index] = ReadColor(reader);
+                                    index++;
+                                }
+                            }
+                        }
                     }
 
                     NewLevel.Frames.Add(NewFrame);
@@ -419,28 +558,98 @@ namespace GimLib.Chunks
                     writer.Seek((int)cur, SeekOrigin.Begin);
                     imgCount +=4;
 
+                    int blockWidth = 128 / ImgInfo.BitsPerPixel;
+                    int blockHeight = 8;
+
                     if ((int)ImgInfo.Format > 3)
                     {
-                        if (ImgInfo.Format == GimFormat.Index4)
+                        if (ImgInfo.Order == GimOrder.PSPImage)
                         {
-                            for (int l = 0; l < Levels[i].Frames[j].PixelsIndex.Length; l += 2)
+                            if (ImgInfo.Format == GimFormat.Index4)
                             {
-                                byte indexByte = (byte)((Levels[i].Frames[j].PixelsIndex[l] << 4) | Levels[i].Frames[j].PixelsIndex[l + 1]);
-                                writer.Write(indexByte);
+                                for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
+                                {
+                                    for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                    {
+                                        for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                        {
+                                            for (int pixelCol = 0; pixelCol < blockWidth; pixelCol++)
+                                            {
+                                                int x = blockCol * blockWidth + pixelCol;
+                                                int y = blockRow * blockHeight + pixelRow;
+                                                byte indexByte = (byte)((Levels[i].Frames[j].PixelsIndex[x + y * ImgInfo.Width] << 4) | Levels[i].Frames[j].PixelsIndex[x + 1 + y * ImgInfo.Width]);
+                                                writer.Write(indexByte);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
+                                {
+                                    for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                    {
+                                        for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                        {
+                                            for (int pixelCol = 0; pixelCol < blockWidth; pixelCol++)
+                                            {
+                                                int x = blockCol * blockWidth + pixelCol;
+                                                int y = blockRow * blockHeight + pixelRow;
+                                                WriteIndex(Levels[i].Frames[j].PixelsIndex[x + y * ImgInfo.Width], writer);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         else
                         {
-                            for (int l = 0; l < Levels[i].Frames[j].PixelsIndex.Length; l++)
-                                WriteIndex(Levels[i].Frames[j].PixelsIndex[l],writer);
+                            if (ImgInfo.Format == GimFormat.Index4)
+                            {
+                                for (int l = 0; l < Levels[i].Frames[j].PixelsIndex.Length; l += 2)
+                                {
+                                    byte indexByte = (byte)((Levels[i].Frames[j].PixelsIndex[l] << 4) | Levels[i].Frames[j].PixelsIndex[l + 1]);
+                                    writer.Write(indexByte);
+                                }
+                            }
+                            else
+                            {
+                                for (int l = 0; l < Levels[i].Frames[j].PixelsIndex.Length; l++)
+                                    WriteIndex(Levels[i].Frames[j].PixelsIndex[l], writer);
+                            }
                         }
+
 
                     }
                     else
                     {
-                        for (int n = 0; n < Levels[i].Frames[j].Pixels.Length; n++)
+                        if (ImgInfo.Order == GimOrder.PSPImage)
                         {
-                            WriteColor(Levels[i].Frames[j].Pixels[n], writer);
+                            int index = 0;
+                            for (int blockRow = 0; blockRow < ImgInfo.Height / blockHeight; blockRow++)
+                            {
+                                for (int blockCol = 0; blockCol < ImgInfo.Width / blockWidth; blockCol++)
+                                {
+                                    for (int pixelRow = 0; pixelRow < blockHeight; pixelRow++)
+                                    {
+                                        for (int pixelCol = 0; pixelCol < blockWidth; pixelCol++)
+                                        {
+                                            int x = blockCol * blockWidth + pixelCol;
+                                            int y = blockRow * blockHeight + pixelRow;
+                                            WriteColor(Levels[i].Frames[j].Pixels[x + y * ImgInfo.Width], writer);
+                                            index++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            for (int n = 0; n < Levels[i].Frames[j].Pixels.Length; n++)
+                            {
+                                WriteColor(Levels[i].Frames[j].Pixels[n], writer);
+                            }
                         }
                     }
 
@@ -569,7 +778,8 @@ namespace GimLib.Chunks
             writer.Write((ushort)0); //Unused
             writer.Write((ushort)ImgInfo.Format);
             writer.Write((ushort)ImgInfo.Order);
-            writer.Write(ImgInfo.Width);
+            writer.Write((ushort)Align(ImgInfo.Width, 8));//Padding needs to be counted as a part of the palette here
+            //Otherwise the width is considered as "illegal"
             writer.Write(ImgInfo.Height);
             writer.Write(ImgInfo.BitsPerPixel);
             writer.Write(ImgInfo.PitchAlign);
@@ -612,9 +822,8 @@ namespace GimLib.Chunks
                     {
                         WriteColor(Levels[i].Frames[j].Pixels[n], writer);
                     }
-
                 }
-            Align(writer, 16);
+            Align(writer, 16); //Add padding to the palette
             long End = writer.BaseStream.Position;
 
             writer.BaseStream.Seek(vals, SeekOrigin.Begin); // Go back and write offsets

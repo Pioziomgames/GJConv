@@ -33,6 +33,10 @@ namespace GJ.IO
         {
             return (value + (alignment - 1) & ~(alignment - 1));
         }
+        public static uint Align(uint value, int alignment)
+        {
+            return (uint)(value + (alignment - 1) & ~(alignment - 1));
+        }
 
         public static void WriteRGBA5650(BinaryWriter writer, Color VColor)
         {
@@ -90,15 +94,34 @@ namespace GJ.IO
             writer.Write(VColor.G);
             writer.Write(VColor.B);
         }
-        public static Color DecodeRGBA5650(ushort color)
+        public static void WritePSMCT32(BinaryWriter writer, Color VColor)
         {
-            int r = (color >> 11) & 31;
-            int g = (color >> 5) & 63;
-            int b = color & 31;
-
-            return Color.FromArgb(255, (r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2));
+            writer.Write((uint)(VColor.R | (VColor.G << 8) | (VColor.B << 16) | (FullByteToHalf(VColor.A) << 24)));
         }
 
+        public static void WritePSMCT16(BinaryWriter writer, Color VColor)
+        {
+            ushort colorData = (ushort)(((FullByteToHalf(VColor.A) >> 7) << 15) | ((VColor.B >> 3) << 10) | ((VColor.G >> 3) << 5) | (VColor.R >> 3));
+            writer.Write(colorData);
+        }
+        public static Color ReadPSMCT32(BinaryReader reader)
+        {
+            uint color = reader.ReadUInt32();
+            return Color.FromArgb(
+                HalfByteToFull((byte)((color >> 24) & byte.MaxValue)),
+                (byte)(color & byte.MaxValue),
+                (byte)((color >> 8) & byte.MaxValue),
+                (byte)((color >> 16) & byte.MaxValue));
+        }
+        public static Color ReadPSMCT16(BinaryReader reader)
+        {
+            ushort color = reader.ReadUInt16();
+            return Color.FromArgb(
+            byte.MaxValue,
+            (byte)((color & 0x001F) << 3),
+            (byte)(((color & 0x03E0) >> 5) << 3),
+            (byte)(((color & 0x7C00) >> 10) << 3));
+        }
         public static Color ReadRGBA5650(BinaryReader reader)
         {
             byte R = 0;

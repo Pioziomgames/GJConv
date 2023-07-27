@@ -51,7 +51,7 @@ namespace TgaLib
             AlphaDepth = 0;
             FlipHorizontal = false;
             FlipVertical = false;
-            UserData = new byte[0];
+            UserData = Array.Empty<byte>();
         }
         public TgaHeader(BinaryReader reader)
         {

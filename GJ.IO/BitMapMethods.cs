@@ -10,17 +10,22 @@ using System.Runtime.InteropServices;
 using GimLib;
 using Tim2Lib;
 using TmxLib;
+using TxnLib;
 using TgaLib;
 using GimLib.Chunks;
 using static GimLib.GimEnums;
 using static Tim2Lib.Tim2Enums;
 using static TmxLib.TmxEnums;
 using System.Collections.Concurrent;
+using ImageProcessor.Imaging.Quantizers;
+using ImageProcessor.Imaging;
+using static TxnLib.RmdEnums;
 
 namespace GJ.IO
 {
     public class BitMapMethods
     {
+#pragma warning disable CA1069 // Enums values should not be duplicated
         public enum ImgType
         {
             png,
@@ -34,50 +39,102 @@ namespace GJ.IO
             tif,
             tiff = 7,
             tga,
+            txn,
+            rwtex = 9,
         }
+#pragma warning restore CA1069 // Enums values should not be duplicated
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-        public static Bitmap ImportBitmap(string Path, ImgType Type)
+        public static Bitmap ImportBitmap(string path, ImgType Type)
         {
-            switch (Type)
+            return Type switch
             {
-                case ImgType.gim:
-                    return GetGimBitmap(Path);
-                case ImgType.tm2:
-                    return GetTim2Bitmap(Path);
-                case ImgType.tga:
-                    return GetTgaBitmap(Path);
-                case ImgType.tmx:
-                    return GetTmxBitmap(Path);
-                default:
-                        return new Bitmap(Path);
-            }
+                ImgType.txn => GetTxnBitmap(path),
+                ImgType.gim => GetGimBitmap(path),
+                ImgType.tm2 => GetTim2Bitmap(path),
+                ImgType.tga => GetTgaBitmap(path),
+                ImgType.tmx => GetTmxBitmap(path),
+                _ => new Bitmap(path),
+            };
         }
-        public static void ExportBitmap(string Path, Bitmap Image, ImgType Type, short TmxUserId = 0, string TmxUserComment = "", int TmxUserTextureId = 0, int TmxUserClutId = 0, bool TgaFlipHorizontal = false, bool TgaFlipVertical = false)
+        public static void ExportBitmap(string path, Bitmap Image, ImgType Type, short TmxUserId = 0, string TmxUserComment = "", int TmxUserTextureId = 0, int TmxUserClutId = 0, bool TgaFlipHorizontal = false, bool TgaFlipVertical = false, bool GimPSPOrder = false)
         {
             switch (Type)
             {
-                case ImgType.gif: Image.Save(Path, ImageFormat.Gif); break;
-                case ImgType.bmp: Image.Save(Path, ImageFormat.Bmp); break;
-                case ImgType.tif: Image.Save(Path, ImageFormat.Tiff); break;
-                case ImgType.jpg: Image.Save(Path, ImageFormat.Jpeg); break;
-                case ImgType.tm2:Tim2FromBitmap(Image).Save(Path); break;
-                case ImgType.gim: GimFromBitmap(Image).Save(Path); break;
+                case ImgType.gif: Image.Save(path, ImageFormat.Gif); break;
+                case ImgType.bmp: Image.Save(path, ImageFormat.Bmp); break;
+                case ImgType.tif: Image.Save(path, ImageFormat.Tiff); break;
+                case ImgType.jpg: Image.Save(path, ImageFormat.Jpeg); break;
+                case ImgType.tm2:Tim2FromBitmap(Image).Save(path); break;
+                case ImgType.gim:
+                    GimFile gim = GimFromBitmap(Image);
+                    if (GimPSPOrder)
+                    {
+                        GimImage img = (GimImage)gim.FileChunk.GatherChildrenOfType(GimChunkType.GimImage)[0];
+                        img.ImgInfo.Order = GimOrder.PSPImage;
+                    }
+                    gim.Save(path);
+                    break;
                 case ImgType.tmx:
                     TmxFile tmx = TmxFromBitmap(Image);
                     tmx.UserId = TmxUserId;
                     tmx.Picture.Header.UserComment = TmxUserComment;
                     tmx.Picture.Header.UserClutId = TmxUserClutId;
                     tmx.Picture.Header.UserTextureId = TmxUserTextureId;
-                    tmx.Save(Path);
+                    tmx.Save(path);
                     break;
                 case ImgType.tga:
                     TgaFile tga = TgaFromBitmap(Image);
                     tga.Header.FlipHorizontal = TgaFlipHorizontal;
                     tga.Header.FlipVertical = TgaFlipVertical;
-                    tga.Save(Path);
+                    tga.Save(path);
                     break;
-                default: Image.Save(Path,ImageFormat.Png); break;
+                case ImgType.txn:
+                    RwTextureNative txn = TxnFromBitmap(Image, Path.GetFileNameWithoutExtension(path));
+                    using (BinaryWriter writer = new(File.OpenWrite(path)))
+                    {
+                        RmdChunk.Write(txn, writer);
+                        writer.Flush();
+                        writer.Close();
+                    }
+                    break;
+                default: Image.Save(path,ImageFormat.Png); break;
             }
+        }
+        public static byte[] GetPixelIndices(Bitmap image)
+        {
+            BitmapData ImageData = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, image.PixelFormat);
+
+            byte[] indices = new byte[ImageData.Height * ImageData.Width];
+
+            unsafe
+            {
+                byte* p = (byte*)ImageData.Scan0;
+                Parallel.For(0, ImageData.Height, y =>
+                {
+                    for (int x = 0; x < ImageData.Width; x++)
+                    {
+                        int offset = y * ImageData.Stride + x;
+                        indices[x + y * ImageData.Width] = (p[offset]);
+                    }
+                });
+            }
+            image.UnlockBits(ImageData);
+
+            return indices;
+        }
+        public static Color[] GetPaletteData(Bitmap image, int paletteColorLimit)
+        {
+            Color[] palette = new Color[paletteColorLimit];
+
+            for (int i = 0; i < image.Palette.Entries.Length; i++)
+            {
+                if (i == paletteColorLimit)
+                    break;
+
+                palette[i] = image.Palette.Entries[i];
+            }
+
+            return palette;
         }
         public static Color[] GetPixels(Bitmap image)
         {
@@ -293,15 +350,14 @@ namespace GJ.IO
             Header.Width = (ushort)image.Width;
             Header.Height = (ushort)image.Height;
 
-            switch (image.PixelFormat)
+            Header.PixelFormat = image.PixelFormat switch
             {
-                case PixelFormat.Format24bppRgb: Header.PixelFormat = Tim2BPP.RGBA8880; break;
-                case PixelFormat.Format16bppArgb1555: Header.PixelFormat = Tim2BPP.RGBA5551; break;
-                case PixelFormat.Format8bppIndexed: Header.PixelFormat = Tim2BPP.INDEX8; break;
-                case PixelFormat.Format4bppIndexed: Header.PixelFormat = Tim2BPP.INDEX4; break;
-                default: Header.PixelFormat = Tim2BPP.RGBA8888; break;
-            }
-
+                PixelFormat.Format24bppRgb => Tim2BPP.RGBA8880,
+                PixelFormat.Format16bppArgb1555 => Tim2BPP.RGBA5551,
+                PixelFormat.Format8bppIndexed => Tim2BPP.INDEX8,
+                PixelFormat.Format4bppIndexed => Tim2BPP.INDEX4,
+                _ => Tim2BPP.RGBA8888,
+            };
             Color[] Pixels = GetPixels(image);
             Tim2ImageData ImageData = new(Pixels);
             Tim2Picture OutputPic = new(Header, ImageData);
@@ -320,14 +376,54 @@ namespace GJ.IO
             Tim2File Output = new(4, Tim2Alignment.Align16, Pictures);
             return Output;
         }
-        public static Bitmap GetTim2Bitmap(string Path)
+        public static RwTextureNative TxnFromBitmap(Bitmap image, string TextureName = "")
         {
-            Tim2File InTm2 = new(Path);
+            PS2PixelFormat Format = PS2PixelFormat.PSMTC32;
+            switch (image.PixelFormat)
+            {
+                case PixelFormat.Format1bppIndexed:
+                case PixelFormat.Format4bppIndexed:
+                    Format = PS2PixelFormat.PSMT4;
+                    break;
+                case PixelFormat.Format8bppIndexed:
+                    Format = PS2PixelFormat.PSMT8;
+                    break;
+                case PixelFormat.Format16bppRgb565:
+                case PixelFormat.Format16bppRgb555:
+                    Format = PS2PixelFormat.PSMTC16;
+                    break;
+            }
+            RasterInfoStruct RasterInfo = new(image.Width, image.Height, Format);
+            RasterDataStruct RasterData;
+            if (Format == PS2PixelFormat.PSMT4 || Format == PS2PixelFormat.PSMT8)
+            {
+                image = LimitColors(image);
+                Color[] Palette = GetPaletteData(image, Format == PS2PixelFormat.PSMT4 ? 16 : 256);
+                byte[] Indexes = GetPixelIndices(image);
+                RasterData = new(RasterInfo, Indexes, Palette );
+            }
+            else
+                RasterData = new(RasterInfo, GetPixels(image));
+
+            RwTextureNative TXN = new(TextureName, RwPlatformId.PS2, 4354, RasterInfo, RasterData);
+            return TXN;
+        }
+        public static Bitmap GetTxnBitmap(string path)
+        {
+            using (BinaryReader reader = new(File.OpenRead(path)))
+            {
+                RwTextureNative TXN = (RwTextureNative)RmdChunk.Read(reader);
+                return GetTxnBitmap(TXN);
+            }
+        }
+        public static Bitmap GetTim2Bitmap(string path)
+        {
+            Tim2File InTm2 = new(path);
             return GetTim2Bitmap(InTm2);
         }
-        public static Bitmap GetTgaBitmap(string Path)
+        public static Bitmap GetTgaBitmap(string path)
         {
-            TgaFile InTga = new(Path);
+            TgaFile InTga = new(path);
             return GetTgaBitmap(InTga);
         }
         public static Bitmap GetTim2Bitmap(byte[] Data)
@@ -340,13 +436,89 @@ namespace GJ.IO
             TgaFile InTga = new(Data);
             return GetTgaBitmap(InTga);
         }
+        public static Bitmap GetTxnBitmap(RwTextureNative Txn)
+        {
+            switch (Txn.RasterInfo.Depth)
+            {
+                case 32:
+                    {
+                        Bitmap image = new(Txn.RasterInfo.Width, Txn.RasterInfo.Height, PixelFormat.Format32bppArgb);
+                        Color[] colors = Txn.RasterData.ImageData;
+                        byte[] pixels = new byte[colors.Length * 4];
+                        for (int i = 0; i < colors.Length; i++)
+                        {
+                            int offset = i * 4;
+                            pixels[offset] = colors[i].B;
+                            pixels[offset + 1] = colors[i].G;
+                            pixels[offset + 2] = colors[i].R;
+                            pixels[offset + 3] = colors[i].A;
+                        }
+
+                        BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+                        Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
+                        image.UnlockBits(data);
+                        return image;
+                    }
+                case 28:
+                    {
+                        Bitmap image = new(Txn.RasterInfo.Width, Txn.RasterInfo.Height, PixelFormat.Format24bppRgb);
+                        Color[] colors = Txn.RasterData.ImageData;
+                        byte[] pixels = new byte[colors.Length * 3];
+                        for (int i = 0; i < colors.Length; i++)
+                        {
+                            int offset = i * 3;
+                            pixels[offset] = colors[i].B;
+                            pixels[offset + 1] = colors[i].G;
+                            pixels[offset + 2] = colors[i].R;
+                        }
+                        BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+                        Marshal.Copy(pixels, 0, data.Scan0, pixels.Length * 2);
+                        image.UnlockBits(data);
+                        return image;
+                    }
+                case 16:
+                case 15:
+                    {
+                        Bitmap image = new(Txn.RasterInfo.Width, Txn.RasterInfo.Height, PixelFormat.Format16bppArgb1555);
+                        Color[] colors = Txn.RasterData.ImageData;
+                        ushort[] pixels = new ushort[colors.Length];
+                        for (int i = 0; i < pixels.Length; i++)
+                        {
+                            ushort alpha = 0x8000;
+                            if (colors[i].A < 10)
+                                alpha = 0;
+                            pixels[i] = (ushort)(alpha | ((colors[i].R >> 3) << 10) | ((colors[i].G >> 3) << 5) | (colors[i].B >> 3));
+                        }
+                        BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+                        byte[] BytePixels = new byte[pixels.Length * 2];
+                        Buffer.BlockCopy(pixels, 0, BytePixels, 0, BytePixels.Length);
+                        Marshal.Copy(BytePixels, 0, data.Scan0, pixels.Length * 2);
+                        image.UnlockBits(data);
+                        return image;
+                    }
+                case 8:
+                    {
+                        Bitmap image = new(Txn.RasterInfo.Width, Txn.RasterInfo.Height, PixelFormat.Format8bppIndexed);
+                        BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+                        byte[] indexes = Txn.RasterData.ImageIndexData;
+                        Marshal.Copy(indexes, 0, data.Scan0, indexes.Length);
+                        ColorPalette palette = image.Palette;
+                        for (int i = 0; i < Txn.RasterData.PaletteData.Length; i++)
+                            palette.Entries[i] = Txn.RasterData.PaletteData[i];
+                        image.Palette = palette;
+                        image.UnlockBits(data);
+                        return image;
+                    }
+                default: throw new Exception("Unimplemented RWPixelFormat");
+            }
+        }
         public static Bitmap GetTgaBitmap(TgaFile InTga)
         {
             switch (InTga.Header.BitsPerPixel)
             {
                 case 32:
                     {
-                        Bitmap image = new Bitmap(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format32bppArgb);
+                        Bitmap image = new(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format32bppArgb);
                         Color[] colors = InTga.GetAllPixels();
                         byte[] pixels = new byte[colors.Length * 4];
                         for (int i = 0; i < colors.Length; i++)
@@ -365,7 +537,7 @@ namespace GJ.IO
                     }
                 case 28:
                     {
-                        Bitmap image = new Bitmap(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format24bppRgb);
+                        Bitmap image = new(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format24bppRgb);
                         Color[] colors = InTga.GetAllPixels();
                         byte[] pixels = new byte[colors.Length * 3];
                         for (int i = 0; i < colors.Length; i++)
@@ -383,7 +555,7 @@ namespace GJ.IO
                 case 16:
                 case 15:
                     {
-                        Bitmap image = new Bitmap(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format16bppArgb1555);
+                        Bitmap image = new(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format16bppArgb1555);
                         Color[] colors = InTga.GetAllPixels();
                         ushort[] pixels = new ushort[colors.Length];
                         for (int i = 0; i < pixels.Length; i++)
@@ -404,7 +576,7 @@ namespace GJ.IO
                     {
                         if (InTga.Header.ImageFormat.HasFlag(TgaFormat.GrayScale))
                         {
-                            Bitmap image = new Bitmap(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format8bppIndexed);
+                            Bitmap image = new(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format8bppIndexed);
                             BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
                             Color[] colors = InTga.GetAllPixels();
                             byte[] indexes = new byte[colors.Length];
@@ -421,7 +593,7 @@ namespace GJ.IO
                         }
                         else
                         {
-                            Bitmap image = new Bitmap(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format8bppIndexed);
+                            Bitmap image = new(InTga.Header.Width, InTga.Header.Height, PixelFormat.Format8bppIndexed);
                             BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
                             byte[] indexes = InTga.GetAllIndexes();
                             Marshal.Copy(indexes, 0, data.Scan0, indexes.Length);
@@ -442,7 +614,7 @@ namespace GJ.IO
             {
                 case Tim2BPP.RGBA5551:
                     {
-                        Bitmap image = new Bitmap(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format16bppArgb1555);
+                        Bitmap image = new(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format16bppArgb1555);
 
                         ushort[] pixels = new ushort[InTm2.Pictures[0].Image.Pixels.Count];
                         for (int i = 0; i < pixels.Length; i++)
@@ -460,7 +632,7 @@ namespace GJ.IO
                     }
                 case Tim2BPP.RGBA8880:
                     {
-                        Bitmap image = new Bitmap(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format24bppRgb);
+                        Bitmap image = new(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format24bppRgb);
 
                         byte[] pixels = new byte[InTm2.Pictures[0].Image.Pixels.Count * 3];
                         for (int i = 0; i < InTm2.Pictures[0].Image.Pixels.Count; i++)
@@ -479,7 +651,7 @@ namespace GJ.IO
                     }
                 case Tim2BPP.RGBA8888:
                     {
-                        Bitmap image = new Bitmap(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format32bppArgb);
+                        Bitmap image = new(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format32bppArgb);
 
                         byte[] pixels = new byte[InTm2.Pictures[0].Image.Pixels.Count * 4];
                         for (int i = 0; i < InTm2.Pictures[0].Image.Pixels.Count; i++)
@@ -499,7 +671,7 @@ namespace GJ.IO
                     }
                 case Tim2BPP.INDEX8:
                     {
-                        Bitmap image = new Bitmap(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format8bppIndexed);
+                        Bitmap image = new(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format8bppIndexed);
                         BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
                         Marshal.Copy(InTm2.Pictures[0].Image.PixelIndexes.ToArray(), 0, data.Scan0, InTm2.Pictures[0].Image.PixelIndexes.Count);
                         ColorPalette palette = image.Palette;
@@ -511,7 +683,7 @@ namespace GJ.IO
                     }
                 case Tim2BPP.INDEX4:
                     {
-                        Bitmap image = new Bitmap(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format4bppIndexed);
+                        Bitmap image = new(InTm2.Pictures[0].Header.Width, InTm2.Pictures[0].Header.Height, PixelFormat.Format4bppIndexed);
                         BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
                         int byteCount = (int)Math.Ceiling(InTm2.Pictures[0].Image.PixelIndexes.Count / 2.0);
                         byte[] pixels = new byte[byteCount];
@@ -535,9 +707,9 @@ namespace GJ.IO
                 default: throw new Exception("Unimplemented TM2 PixelFormat");
             }
         }
-        public static Bitmap GetGimBitmap(string Path)
+        public static Bitmap GetGimBitmap(string path)
         {
-            GimFile InGim = new(Path);
+            GimFile InGim = new(path);
             return GetGimBitmap(InGim);
         }
         public static Bitmap GetGimBitmap(byte[] Data)
@@ -567,14 +739,14 @@ namespace GJ.IO
                 {
                     case GimFormat.Index8:
                         {
-                            Bitmap image = new Bitmap(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format8bppIndexed);
+                            Bitmap image = new(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format8bppIndexed);
                             BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
                             byte[] indexes = new byte[Image.Levels[0].Frames[0].PixelsIndex.Length];
                             for (int i = 0; i < indexes.Length; i++)
                                 indexes[i] = (byte)Image.Levels[0].Frames[0].PixelsIndex[i];
                             Marshal.Copy(indexes, 0, data.Scan0, indexes.Length);
                             ColorPalette palette = image.Palette;
-                            for (int i = 0; i < Colors.Count; i++)
+                            for (int i = 0; i < palette.Entries.Length; i++)
                                 palette.Entries[i] = Colors[i];
                             image.Palette = palette;
                             image.UnlockBits(data);
@@ -582,7 +754,7 @@ namespace GJ.IO
                         }
                     case GimFormat.Index4:
                         {
-                            Bitmap image = new Bitmap(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format4bppIndexed);
+                            Bitmap image = new(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format4bppIndexed);
                             BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
                             int byteCount = (int)Math.Ceiling(Image.Levels[0].Frames[0].PixelsIndex.Length / 2.0);
                             byte[] pixels = new byte[byteCount];
@@ -597,7 +769,7 @@ namespace GJ.IO
 
                             Marshal.Copy(pixels.ToArray(), 0, data.Scan0, pixels.Length);
                             ColorPalette palette = image.Palette;
-                            for (int i = 0; i < Colors.Count; i++)
+                            for (int i = 0; i < palette.Entries.Length; i++)
                                 palette.Entries[i] = Colors[i];
                             image.Palette = palette;
                             image.UnlockBits(data);
@@ -606,7 +778,7 @@ namespace GJ.IO
                     case GimFormat.Index16:
                     case GimFormat.Index32:
                         {
-                            Bitmap image = new Bitmap(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format32bppArgb);
+                            Bitmap image = new(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format32bppArgb);
                             uint[] Indexes = Image.Levels[0].Frames[0].PixelsIndex;
                             byte[] pixels = new byte[Indexes.Length * 4];
                             for (int i = 0; i < pixels.Length; i++)
@@ -633,7 +805,7 @@ namespace GJ.IO
                     case GimFormat.RGBA4444:
                     case GimFormat.RGBA8888:
                         {
-                            Bitmap image = new Bitmap(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format32bppArgb);
+                            Bitmap image = new(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format32bppArgb);
                             Color[] Colors = Image.Levels[0].Frames[0].Pixels;
                             byte[] pixels = new byte[Colors.Length * 4];
                             for (int i = 0; i < Colors.Length; i++)
@@ -652,7 +824,7 @@ namespace GJ.IO
                         }
                     case GimFormat.RGBA5551:
                         {
-                            Bitmap image = new Bitmap(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format16bppArgb1555);
+                            Bitmap image = new(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format16bppArgb1555);
                             Color[] Colors = Image.Levels[0].Frames[0].Pixels;
                             ushort[] pixels = new ushort[Colors.Length];
                             for (int i = 0; i < Colors.Length; i++)
@@ -670,7 +842,7 @@ namespace GJ.IO
                         }
                     case GimFormat.RGBA5650:
                         {
-                            Bitmap image = new Bitmap(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format16bppRgb565);
+                            Bitmap image = new(Image.ImgInfo.Width, Image.ImgInfo.Height, PixelFormat.Format16bppRgb565);
                             Color[] Colors = Image.Levels[0].Frames[0].Pixels;
                             ushort[] pixels = new ushort[Colors.Length];
                             for (int i = 0; i < Colors.Length; i++)
@@ -691,9 +863,9 @@ namespace GJ.IO
         }
 
         
-        public static Bitmap GetTmxBitmap(string Path)
+        public static Bitmap GetTmxBitmap(string path)
         {
-            TmxFile InTmx = new(Path);
+            TmxFile InTmx = new(path);
             return GetTmxBitmap(InTmx);
         }
         
@@ -712,7 +884,7 @@ namespace GJ.IO
                 case TmxPixelFormat.PSMT8H:
                     Format = PixelFormat.Format8bppIndexed; break;
             }
-            Bitmap image = new Bitmap(InTmx.Picture.Header.Width, InTmx.Picture.Header.Height, Format);
+            Bitmap image = new(InTmx.Picture.Header.Width, InTmx.Picture.Header.Height, Format);
             BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
             if (InTmx.Picture.Header.PaletteCount > 0)
             {
@@ -845,102 +1017,70 @@ namespace GJ.IO
             GimFile File = new(FileChunk);
             return File;
         }
-
-        public static Bitmap LimitColors(Bitmap bitmap)
+        public static Bitmap ForcePowerOfTwo(Bitmap bitmap, bool Linear)
         {
-            byte[] Pixels = ConvertToIndexed(GetPixels(bitmap), out List<Color> Palette);
+            int NewWidth = GetClosestPowerOfTwo(bitmap.Width);
+            int NewHeight = GetClosestPowerOfTwo(bitmap.Height);
 
-            Bitmap image = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format8bppIndexed);
-            BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
-            Marshal.Copy(Pixels, 0, data.Scan0, Pixels.Length);
-            ColorPalette palette = image.Palette;
-            for (int i = 0; i < Palette.Count; i++)
-                palette.Entries[i] = Palette[i];
-            image.Palette = palette;
-            image.UnlockBits(data);
-            return image;
+            if (NewHeight == bitmap.Height && NewWidth == bitmap.Width)
+            {
+                return bitmap;
+            }
+            return ResizeImage(bitmap, new Size(NewWidth, NewHeight), Linear);
         }
-        public static byte[] ConvertToIndexed(Color[] pixels, out List<Color> Palette)
+        public static Bitmap ResizeImage(Bitmap bitmap, Size size, bool Linear)
         {
-            var colorCounts = new ConcurrentDictionary<Color, int>();
-
-            Parallel.ForEach(pixels, color =>
+            if (bitmap.Width == size.Width && bitmap.Height == size.Height)
+                return bitmap;
+            Resizer resizer = new(size);
+            return resizer.ResizeImage(bitmap, !Linear);
+        }
+        public static int GetClosestPowerOfTwo(int number, bool OnlyScaleUp = false, bool OnlyScaleDown = false)
+        {
+            bool negative = false;
+            if (number < 0)
             {
-                colorCounts.AddOrUpdate(color, 1, (key, value) => value + 1);
-            });
+                number = -number;
+                negative = true;
+            }
 
-            var sortedColors = colorCounts.Keys.OrderByDescending(color => colorCounts[color]).ToList();
-
-            var indexedPixels = new byte[pixels.Length];
-
-            if (sortedColors.Count > 256)
+            int LowPowerOfTwo = 1;
+            while (LowPowerOfTwo <= number)
             {
-                var palette = sortedColors.Take(254).ToList();
-                palette.Insert(0, Color.FromArgb(0, 0, 0, 0));
-                palette.Insert(1, Color.FromArgb(0, 0, 0));
-                Palette = palette;
+                LowPowerOfTwo <<= 1;
+            }
+            LowPowerOfTwo >>= 1;
 
-                Parallel.For(0, pixels.Length, i =>
-                {
-                    Color pixelColor = pixels[i];
-                    if (pixelColor.A <= 127)
-                        indexedPixels[i] = 0;
-                    else if (pixelColor.R == 0 && pixelColor.G == 0 && pixelColor.B == 0)
-                        indexedPixels[i] = 1;
-                    else
-                    {
-                        pixelColor = Color.FromArgb(pixelColor.R, pixelColor.G, pixelColor.B);
-                        Color closestColor = FindClosestColor(pixelColor, palette);
-                        indexedPixels[i] = (byte)palette.IndexOf(closestColor);
-                    }
-                });
+            int HighPowerOfTwo = 1;
+            while (HighPowerOfTwo < number)
+            {
+                HighPowerOfTwo <<= 1;
+            }
+            if (OnlyScaleUp)
+                return HighPowerOfTwo;
+            if (OnlyScaleDown)
+                return LowPowerOfTwo;
+            if (number - LowPowerOfTwo <= HighPowerOfTwo - number)
+            {
+                number = LowPowerOfTwo;
             }
             else
             {
-                var palette = sortedColors.ToList();
-                Palette = palette;
-
-                Parallel.For(0, pixels.Length, i =>
-                {
-                    indexedPixels[i] = (byte)palette.IndexOf(pixels[i]);
-                });
+                number = HighPowerOfTwo;
             }
-
-            return indexedPixels;
+            if (negative)
+                number = -number;
+            return number;
         }
-
-        private static Color FindClosestColor(Color color, List<Color> palette)
+        public static Bitmap LimitColors(Bitmap bitmap)
         {
-            Color closestColor = palette[0];
-            double closestDistance = ColorDistance(color, closestColor);
+            OctreeQuantizer quantizer = new();
 
-            for (int i = 1; i < palette.Count; i++)
-            {
-                double distance = ColorDistance(color, palette[i]);
-                if (distance < closestDistance)
-                {
-                    closestColor = palette[i];
-                    closestDistance = distance;
-                }
-            }
-            return closestColor;
-        }
-        private static double ColorDistance(Color a, Color b)
-        {
-            double alphaDifference = (a.A - b.A) / 255.0;
-            double redDifference = (a.R - b.R) / 255.0;
-            double greenDifference = (a.G - b.G) / 255.0;
-            double blueDifference = (a.B - b.B) / 255.0;
-
-            double distance = Math.Sqrt(2 * alphaDifference * alphaDifference + //alpha is more important than anything else
-                                        redDifference * redDifference +
-                                        greenDifference * greenDifference +
-                                        blueDifference * blueDifference);
-            return distance;
+            return quantizer.Quantize(bitmap);
         }
         public static Bitmap Solidify(Bitmap bitmap)
         {
-            Bitmap solidifiedBitmap = new Bitmap(bitmap.Width, bitmap.Height);
+            Bitmap solidifiedBitmap = new(bitmap.Width, bitmap.Height);
             int solidifyDistance = 2; //Number of transparent pixels around the non transparent pixels to solidify
             int bitmapWidth = bitmap.Width;
             int bitmapHeight = bitmap.Height;

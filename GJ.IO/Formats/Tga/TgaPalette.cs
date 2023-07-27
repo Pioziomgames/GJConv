@@ -22,9 +22,9 @@ namespace TgaLib
                         int R = (pixel & 0x7C00) >> 10;
                         int G = (pixel & 0x03E0) >> 5;
                         int B = (pixel & 0x001F);
-                        R = R << 3;
-                        G = G << 3;
-                        B = B << 3;
+                        R <<= 3;
+                        G <<= 3;
+                        B <<= 3;
                         Colors[i] = Color.FromArgb(R, G, B);
                     }
                     break;
@@ -36,9 +36,9 @@ namespace TgaLib
                         int G = (pixel & 0x03E0) >> 5;
                         int B = (pixel & 0x001F);
                         int A = (pixel & 0x8000) != 0 ? 255 : 0;
-                        R = R << 3;
-                        G = G << 3;
-                        B = B << 3;
+                        R <<= 3;
+                        G <<= 3;
+                        B <<= 3;
                         Colors[i] = Color.FromArgb(A,R,G,B);
                     }
                     break;
