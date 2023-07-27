@@ -5,16 +5,23 @@ A .NET 6.0 converter for console texture formats.
 - GIM
 - TIM2
 - TGA
+- TXN/RWTEX (Renderware PS2 TextureNative)
 - PNG/BMP/JPG/GIF/TIFF
 # Usage:
 `GJConv.exe {args} {inputfile} {outputfile}(optional) {outputformat}(optional)`
 ### Arguments:
 - `-so`             Solidify (on by default)
-- `-rb`             Swap Red and Blue
-- `-id`             Convert to indexed
-- `-fc`             Convert to full color
+- `-rb`             Swap Red and Blue channels
+- `-id`             Convert image to indexed
+- `-fc`             Convert image to full color
+- `-ls`             Use linear filtering for scaling (on by default)
+- `-f2`             Force image size to be a power of 2
+- `-fw {int}`       Force image width
+- `-fh {int}`       Force image height
 - `-ui {short}`     Tmx user id
-- `-uc {string}`    Tmx user comment
+- `-uc {string}`    Tmx user comment (turns off TmxUseFileName if on)
+- `-uf`             Use filename for user comment (on by default)
+- `-po`             Gim use PSP pixel order
 ### Explanations:
 - Default arguments can be set in GJConv.cfg
 - Order of arguments does not matter.
@@ -36,13 +43,9 @@ A .NET 6.0 converter for console texture formats.
 ## Limitations:
 - RLE TGA can only be imported and not exported.
 - GIM files using DXT are not supported.
-- GIM files using the fast pixel order are not supported.
 - Mip maps are not supported.
 - If the input file has animation data, all of it besides the first frame will be discarded(even when exporting to a format that supports animation).
 - Output pixel formats are mostly dictated by input files(only way to overwrite that is through `-id` and `-fc`).
 ## Future Development:
-- Implementing a better color limiting algorithm
-- Adding rw ps2 texture support (rmd)
-- DXT support (gim and dds)
-- GIM fast pixel order support (PSP tiling)
 - TGA RLE export
+- Implementing more texture formats
