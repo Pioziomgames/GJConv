@@ -11,7 +11,6 @@ namespace GJConv
         static Config config;
         static void Main(string[] args)
         {
-            args = new string[] { @"C:\Users\oem\Downloads\Test.gim", "dds" };
             if (File.Exists(ConfigPath))
                 config = new Config(ConfigPath);
             else
