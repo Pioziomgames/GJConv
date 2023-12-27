@@ -231,7 +231,7 @@ namespace GJConv
         }
         static void Info()
         {
-            Console.WriteLine("GJConv 0.2 by Pioziomgames");
+            Console.WriteLine("GJConv 0.3 by Pioziomgames");
             Console.WriteLine("\nUsage:");
             Console.WriteLine("\tGJConv.exe {args} {inputfile} {outputfile}(optional) {outputformat}(optional)");
             Console.WriteLine("\nDefault values of all arguments are editable in the config file");
