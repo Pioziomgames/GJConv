@@ -83,7 +83,8 @@ namespace TxnLib
         public byte[] ImageIndexData;
         public PS2ImageHeader? PaletteHeader;
         public Color[] PaletteData;
-        private RasterDataStruct(RasterInfoStruct Info, Color[]? imageData = null, byte[]? imageIndexData = null, Color[]? paletteData = null)
+        public byte[] MipMapData;
+        private RasterDataStruct(RasterInfoStruct Info, Color[] imageData = null, byte[] imageIndexData = null, Color[] paletteData = null)
         : base(RmdChunkType.Struct, 469893175)
         {
             bool HasHeaders = Info.Format.HasFlag(RwRasterFormat.HasHeaders);
@@ -224,6 +225,14 @@ namespace TxnLib
                         ImageData[i] = ReadRGBA5551(reader);
                 }
             }
+
+            int MipMapDataSize = (int)(Info.TexelDataLength + ImageStart - reader.BaseStream.Position);
+
+            if (MipMapDataSize > 0)
+                MipMapData = reader.ReadBytes(MipMapDataSize);
+            else
+                MipMapData = Array.Empty<byte>();
+
             reader.BaseStream.Position = Info.TexelDataLength + ImageStart;
             if (Info.Depth <= 8)
             {
@@ -266,7 +275,7 @@ namespace TxnLib
             if (HasHeaders)
             {
                 if (ImageHeader == null)
-                    throw new Exception("Attempted to draw a non existing ImageHeader");
+                    throw new Exception("Attempted to write a non existing ImageHeader");
                 ImageHeader.Write(writer);
             }
 
@@ -284,6 +293,11 @@ namespace TxnLib
                     }
                 }
 
+                if (MipMapData != null && MipMapData.Length > 0)
+                {
+                    writer.Write(MipMapData);
+                }
+
                 writer.BaseStream.Position = Info.TexelDataLength + ImageStart;
 
                 long PaletteStart = writer.BaseStream.Position;
@@ -291,7 +305,7 @@ namespace TxnLib
                 if (HasHeaders)
                 {
                     if (PaletteHeader == null)
-                        throw new Exception("Attempted to draw a non existing PaletteHeader");
+                        throw new Exception("Attempted to write a non existing PaletteHeader");
                     PaletteHeader.Write(writer);
                 }
 
@@ -559,6 +573,13 @@ namespace TxnLib
             TexelDataLength = (uint)(TextureSize * (Depth / 8));
             if (Format.HasFlag(RwRasterFormat.HasHeaders))
                 TexelDataLength += 0x50; //HeaderSize
+            if (Format.HasFlag(RwRasterFormat.MipMap))
+            { 
+                for (int i = 1; i < (int)Tex1Reg.MaxMipLevel; i++)
+                {
+                    TexelDataLength += (uint)((Width >> i) * (Height >> i) * (Depth / 8));
+                }
+            }
             PaletteDataLength = 0;
             GPUAlignedLength = (uint)((Width / 2) * (Height / 2));
             if (Depth <= 8)

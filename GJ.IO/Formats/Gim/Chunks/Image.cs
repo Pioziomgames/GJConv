@@ -7,6 +7,7 @@ using System.Drawing;
 using static GJ.IO.IOFunctions;
 using static GimLib.GimFunctions;
 using static GimLib.GimEnums;
+using static DDSLib.DXT;
 
 namespace GimLib.Chunks
 {
@@ -204,7 +205,7 @@ namespace GimLib.Chunks
                     {
                         return ReadRGBA8888(reader);
                     }
-                default: throw new Exception("Unimplemented Color Format");
+                default: throw new Exception($"Unimplemented GIM Color Format: {ImgInfo.Format}");
             }
         }
         private void WriteColor(Color VColor, BinaryWriter writer)
@@ -275,22 +276,18 @@ namespace GimLib.Chunks
                 {
                     Frame NewFrame = new();
 
-
                     if ((int)ImgInfo.Format > 7)
                     {
-                        throw new Exception("DXT is currently not supported");
-                        /*if (ImgInfo.Format == GimFormat.DXT1 || ImgInfo.Format == GimFormat.DXT1EXT)
-                        {
-                            NewFrame.Pixels = ReadDXT1(reader, ImgInfo.Width, ImgInfo.Height);
-                        }
+                        int pitch = (ImgInfo.BitsPerPixel * ImgInfo.Width + 7) / 8;
+                        pitch = (pitch + ImgInfo.PitchAlign - 1) / ImgInfo.PitchAlign * ImgInfo.PitchAlign;
+                        if (ImgInfo.Format == GimFormat.DXT1 || ImgInfo.Format == GimFormat.DXT1EXT)
+                            NewFrame.Pixels = ReadSonyDXT1Data(reader, ImgInfo.Width, ImgInfo.Height,pitch);
                         else if (ImgInfo.Format == GimFormat.DXT3 || ImgInfo.Format == GimFormat.DXT3EXT)
-                        {
-                            NewFrame.Pixels = ReadDXT3(reader, ImgInfo.Width, ImgInfo.Height).ToArray();
-                        }
+                            NewFrame.Pixels = ReadSonyDXT3Data(reader, ImgInfo.Width, ImgInfo.Height, pitch);
                         else if (ImgInfo.Format == GimFormat.DXT5 || ImgInfo.Format == GimFormat.DXT5EXT)
-                        {
-                            NewFrame.Pixels = ReadDXT5(reader, ImgInfo.Width, ImgInfo.Height).ToArray();
-                        }*/
+                            NewFrame.Pixels = ReadSonyDXT5Data(reader, ImgInfo.Width, ImgInfo.Height, pitch);
+                        else
+                            throw new Exception($"Unsupported GIM color format: {ImgInfo.Format}");
                     }
                     else if ((int)ImgInfo.Format > 3)
                     {

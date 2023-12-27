@@ -20,6 +20,8 @@ using System.Collections.Concurrent;
 using ImageProcessor.Imaging.Quantizers;
 using ImageProcessor.Imaging;
 using static TxnLib.RmdEnums;
+using DDSLib;
+using static DDSLib.DDSEnums;
 
 namespace GJ.IO
 {
@@ -41,6 +43,7 @@ namespace GJ.IO
             tga,
             txn,
             rwtex = 9,
+            dds,
         }
 #pragma warning restore CA1069 // Enums values should not be duplicated
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
@@ -53,6 +56,7 @@ namespace GJ.IO
                 ImgType.tm2 => GetTim2Bitmap(path),
                 ImgType.tga => GetTgaBitmap(path),
                 ImgType.tmx => GetTmxBitmap(path),
+                ImgType.dds => GetDdsBitmap(path),
                 _ => new Bitmap(path),
             };
         }
@@ -96,6 +100,9 @@ namespace GJ.IO
                         writer.Flush();
                         writer.Close();
                     }
+                    break;
+                case ImgType.dds:
+                    DdsFromBitmap(Image).Save(path);
                     break;
                 default: Image.Save(path,ImageFormat.Png); break;
             }
@@ -802,6 +809,12 @@ namespace GJ.IO
             {
                 switch (Image.ImgInfo.Format)
                 {
+                    case GimFormat.DXT1:
+                    case GimFormat.DXT1EXT:
+                    case GimFormat.DXT3:
+                    case GimFormat.DXT3EXT:
+                    case GimFormat.DXT5:
+                    case GimFormat.DXT5EXT:
                     case GimFormat.RGBA4444:
                     case GimFormat.RGBA8888:
                         {
@@ -862,13 +875,38 @@ namespace GJ.IO
             }
         }
 
-        
+        public static Bitmap GetDdsBitmap(string path)
+        {
+            DDSFile InDds = new(path);
+            return GetDdsBitmap(InDds);
+        }
         public static Bitmap GetTmxBitmap(string path)
         {
             TmxFile InTmx = new(path);
             return GetTmxBitmap(InTmx);
         }
-        
+        public static Bitmap GetDdsBitmap(DDSFile InDds)
+        {
+            PixelFormat Format = PixelFormat.Format32bppArgb;
+            Bitmap image = new((int)InDds.DDSHeader.Width, (int)InDds.DDSHeader.Height, Format);
+            BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+            if (Format == PixelFormat.Format32bppArgb)
+            {
+                byte[] pixels = new byte[InDds.Pixels.Length * 4];
+                for (int i = 0; i < InDds.Pixels.Length; i++)
+                {
+                    Color color = InDds.Pixels[i];
+                    int offset = i * 4;
+                    pixels[offset] = color.B;
+                    pixels[offset + 1] = color.G;
+                    pixels[offset + 2] = color.R;
+                    pixels[offset + 3] = color.A;
+                }
+                Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
+            }
+            image.UnlockBits(data);
+            return image;
+        }
         public static Bitmap GetTmxBitmap(TmxFile InTmx)
         {
             PixelFormat Format = PixelFormat.Format32bppArgb;
@@ -946,7 +984,27 @@ namespace GJ.IO
             image.UnlockBits(data);
             return image;
         }
-        
+        public static DDSFile DdsFromBitmap(Bitmap image)
+        {
+            DDSFlags flags = DDSFlags.UseCaps | DDSFlags.UseWidth | DDSFlags.UseHeight | DDSFlags.UsePixelFormat;
+            DDSPixelFormat pixelFormat = new DDSPixelFormat(DDSPixelFormatFlags.HasRGB | DDSPixelFormatFlags.HasAlphaPixels);
+            DDSHeader header = new((uint)image.Height, (uint)image.Width, flags, pixelFormat);
+            header.Caps1 = DDSCaps.Texture;
+            header.Depth = 1;
+            header.MipMapCount = 1;
+            Color[] pixels = GetPixels(image);
+            DDSFile Out = new DDSFile(header, pixels);
+            return Out;
+            /*
+            DDSFlags flags = DDSFlags.UseCaps | DDSFlags.UseWidth | DDSFlags.UseHeight | DDSFlags.UsePixelFormat;
+            DDSPixelFormat pixelFormat = new DDSPixelFormat(DDSPixelFormatFlags.HasFourCC, DDSFourCC.DXT1);
+            DDSHeader header = new((uint)image.Height, (uint)image.Width, flags, pixelFormat);
+            header.Caps1 = DDSCaps.Texture;
+            Color[] pixels = GetPixels(image);
+            DDSFile Out = new DDSFile(header, pixels);
+            return Out;
+            */
+        }
         public static TmxFile TmxFromBitmap(Bitmap image)
         {
             TmxPictureHeader Header = new();
@@ -971,7 +1029,6 @@ namespace GJ.IO
             TmxFile Out = new(Pic, 0, 2);
             return Out;
         }
-        
         public static GimFile GimFromBitmap(Bitmap image)
         {
             GimBinaryChunk FileChunk = new(Array.Empty<byte>(), GimChunkType.GimFile, new List<GimChunk>(), null);

@@ -29,10 +29,9 @@ namespace TxnLib
         {
             for (int i = 0; i < Value.Length; i++)
                 writer.Write(Value[i]);
-            int padding = Value.Length - Align(Value.Length,4);
+            int padding = Align(Value.Length+1,4) - Value.Length;
 
-            for (int i = 0;i < padding;i++)
-                writer.Write((byte)0);
+            writer.Seek(padding, SeekOrigin.Current);
         }
     }
 }
