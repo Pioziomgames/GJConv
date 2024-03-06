@@ -1,14 +1,33 @@
+using System.Linq;
 using static GJ.IO.BitMapMethods;
 
 namespace GJView
 {
     public partial class MainForm : Form
     {
+        OpenFileDialog dialog;
         public MainForm()
         {
             InitializeComponent();
             FileMenuStrip.Renderer = new StripColorsRenderer();
             Text = Program.WindowText;
+
+            ImgType[] Values = (ImgType[])Enum.GetValues(typeof(ImgType));
+            string[] extensions = new string[Values.Length];
+            int index = 0;
+            Values = Values.Distinct().ToArray();
+            for (int i = 0; i < Values.Length; i++)
+            {
+                string[] allNames = Enum.GetNames(typeof(ImgType))
+                    .Where(name => ((ImgType)Enum.Parse(typeof(ImgType), name)).Equals(Values[i])).ToArray();
+                for (int j = 0; j < allNames.Length; j++)
+                    extensions[index++] = allNames[j];
+
+            }
+            dialog = new OpenFileDialog();
+            dialog.Filter = "Supported Formats|*.";
+
+            dialog.Filter += string.Join(";*.", extensions);
         }
         public MainForm(string Path)
             : this()
@@ -32,12 +51,8 @@ namespace GJView
             }
             catch { }
         }
-
         private void openToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            OpenFileDialog dialog = new OpenFileDialog();
-            dialog.Filter = "Supported Formats|*.";
-            dialog.Filter += string.Join(";*.", (ImgType[])Enum.GetValues(typeof(ImgType)));
             
             if (dialog.ShowDialog() == DialogResult.OK)
                 OpenFile(dialog.FileName);
@@ -47,8 +62,11 @@ namespace GJView
         {
             try
             {
-                string path = ((string[])e.Data.GetData(DataFormats.FileDrop, false))[0];
-                OpenFile(path);
+                string path = String.Empty;
+                if (e.Data != null)
+                    path = ((string[])e.Data.GetData(DataFormats.FileDrop, false))[0];
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                    OpenFile(path);
             }
             catch { }
         }
