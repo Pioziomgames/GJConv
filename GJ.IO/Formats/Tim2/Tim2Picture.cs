@@ -116,13 +116,40 @@ namespace Tim2Lib
         public void Read(BinaryReader reader, Tim2Alignment Alignment = Tim2Alignment.Align128)
         {
             Header = new PictureHeader(reader);
-            if (Header.MipMapCount > 1)
-                throw new Exception("MipMaps are not supported");
 
             if (Alignment == Tim2Alignment.Align128)
                 Align(reader, 128);
 
             Image = new Tim2ImageData(reader, Header.Height, Header.Width, Header.PixelFormat);
+
+            if (Header.MipMapCount > 1) //Skip mip map data
+            {
+                int MipMapSize = 0;
+                //Skip the first mip map since we already read that
+                for (int i = 1; i < Header.MipMapCount; i++)
+                {
+                    int mipWidth = Math.Max(1, Header.Width >> i);
+                    int mipHeight = Math.Max(1, Header.Height >> i);
+                    MipMapSize += mipWidth * mipHeight;
+                }
+                switch (Header.PixelFormat)
+                {
+                    case Tim2BPP.RGBA8880:
+                        MipMapSize *= 3;
+                        break;
+                    case Tim2BPP.RGBA5551:
+                        MipMapSize *= 2;
+                        break;
+                    case Tim2BPP.INDEX4:
+                        MipMapSize /= 2;
+                        break;
+                    case Tim2BPP.RGBA8888:
+                        MipMapSize *= 4;
+                        break;
+                    //Tim2BPP.INDEX8 -- stays the same
+                }
+                reader.BaseStream.Position += MipMapSize;
+            }
 
             if (Alignment == Tim2Alignment.Align128)
                 Align(reader, 128);

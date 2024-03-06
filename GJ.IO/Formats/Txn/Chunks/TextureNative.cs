@@ -84,7 +84,7 @@ namespace TxnLib
         public PS2ImageHeader? PaletteHeader;
         public Color[] PaletteData;
         public byte[] MipMapData;
-        private RasterDataStruct(RasterInfoStruct Info, Color[] imageData = null, byte[] imageIndexData = null, Color[] paletteData = null)
+        private RasterDataStruct(RasterInfoStruct Info, Color[]? imageData = null, byte[]? imageIndexData = null, Color[]? paletteData = null)
         : base(RmdChunkType.Struct, 469893175)
         {
             bool HasHeaders = Info.Format.HasFlag(RwRasterFormat.HasHeaders);

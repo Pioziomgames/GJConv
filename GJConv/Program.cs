@@ -231,7 +231,7 @@ namespace GJConv
         }
         static void Info()
         {
-            Console.WriteLine("GJConv 0.3 by Pioziomgames");
+            Console.WriteLine("GJConv 0.4 by Pioziomgames");
             Console.WriteLine("\nUsage:");
             Console.WriteLine("\tGJConv.exe {args} {inputfile} {outputfile}(optional) {outputformat}(optional)");
             Console.WriteLine("\nDefault values of all arguments are editable in the config file");
@@ -254,19 +254,6 @@ namespace GJConv
             Console.ReadKey();
             System.Environment.Exit(0);
         }
-        static string CheckMagic(string Path, string Extension)
-        {
-            byte[] file = File.ReadAllBytes(Path);
-
-            if (file[0] == 'T' && file[1] == 'I' && file[2] == 'M' && file[3] == '2')
-                Extension = "tm2";
-            else if (file[0] == 'M' && file[1] == 'I' && file[2] == 'G')
-                Extension = "gim";
-            else if (file[0] == 'T' && file[1] == 'M' && file[3] == 'X')
-                Extension = "tmx";
-            return Extension;
-        }
-        
     }
 }
 

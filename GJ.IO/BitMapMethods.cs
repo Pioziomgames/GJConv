@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Drawing;
+﻿using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using GimLib;
@@ -12,16 +6,16 @@ using Tim2Lib;
 using TmxLib;
 using TxnLib;
 using TgaLib;
+using CtxrLib;
+using DDSLib;
 using GimLib.Chunks;
 using static GimLib.GimEnums;
 using static Tim2Lib.Tim2Enums;
 using static TmxLib.TmxEnums;
-using System.Collections.Concurrent;
+using static TxnLib.RmdEnums;
+using static DDSLib.DDSEnums;
 using ImageProcessor.Imaging.Quantizers;
 using ImageProcessor.Imaging;
-using static TxnLib.RmdEnums;
-using DDSLib;
-using static DDSLib.DDSEnums;
 
 namespace GJ.IO
 {
@@ -44,6 +38,8 @@ namespace GJ.IO
             txn,
             rwtex = 9,
             dds,
+            ctxr,
+            txtr = 11,
         }
 #pragma warning restore CA1069 // Enums values should not be duplicated
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
@@ -57,6 +53,7 @@ namespace GJ.IO
                 ImgType.tga => GetTgaBitmap(path),
                 ImgType.tmx => GetTmxBitmap(path),
                 ImgType.dds => GetDdsBitmap(path),
+                ImgType.ctxr => GetCtxrBitmap(path),
                 _ => new Bitmap(path),
             };
         }
@@ -94,17 +91,16 @@ namespace GJ.IO
                     break;
                 case ImgType.txn:
                     RwTextureNative txn = TxnFromBitmap(Image, Path.GetFileNameWithoutExtension(path));
-                    using (BinaryWriter writer = new(File.OpenWrite(path)))
+                    using (BinaryWriter writer = new(File.Create(path)))
                     {
                         RmdChunk.Write(txn, writer);
                         writer.Flush();
                         writer.Close();
                     }
                     break;
-                case ImgType.dds:
-                    DdsFromBitmap(Image).Save(path);
-                    break;
-                default: Image.Save(path,ImageFormat.Png); break;
+                case ImgType.ctxr: CtxrFromBitmap(Image).Save(path); break;
+                case ImgType.dds: DdsFromBitmap(Image).Save(path); break;
+                default: Image.Save(path,ImageFormat.Png);break;
             }
         }
         public static byte[] GetPixelIndices(Bitmap image)
@@ -297,6 +293,11 @@ namespace GJ.IO
             image.UnlockBits(data);
             return Colors;
         }
+        public static CtxrFile CtxrFromBitmap(Bitmap image)
+        {
+            CtxrFile output = new CtxrFile((ushort)image.Width, (ushort)image.Height, GetPixels(image));
+            return output;
+        }
         public static TgaFile TgaFromBitmap(Bitmap image)
         {
             TgaHeader Header = new();
@@ -415,6 +416,11 @@ namespace GJ.IO
             RwTextureNative TXN = new(TextureName, RwPlatformId.PS2, 4354, RasterInfo, RasterData);
             return TXN;
         }
+        public static Bitmap GetCtxrBitmap(string path)
+        {
+            CtxrFile InCtxr = new(path);
+            return GetCtxrBitmap(InCtxr);
+        }
         public static Bitmap GetTxnBitmap(string path)
         {
             using (BinaryReader reader = new(File.OpenRead(path)))
@@ -442,6 +448,25 @@ namespace GJ.IO
         {
             TgaFile InTga = new(Data);
             return GetTgaBitmap(InTga);
+        }
+        public static Bitmap GetCtxrBitmap(CtxrFile InCtxr)
+        {
+            Bitmap image = new(InCtxr.Header.Width, InCtxr.Header.Height, PixelFormat.Format32bppArgb);
+            Color[] colors = InCtxr.ImageData;
+            byte[] pixels = new byte[colors.Length * 4];
+            for (int i = 0; i < colors.Length; i++)
+            {
+                int offset = i * 4;
+                pixels[offset] = colors[i].B;
+                pixels[offset + 1] = colors[i].G;
+                pixels[offset + 2] = colors[i].R;
+                pixels[offset + 3] = colors[i].A;
+            }
+
+            BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+            Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
+            image.UnlockBits(data);
+            return image;
         }
         public static Bitmap GetTxnBitmap(RwTextureNative Txn)
         {
@@ -652,7 +677,7 @@ namespace GJ.IO
                         }
 
                         BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
-                        Marshal.Copy(pixels, 0, data.Scan0, pixels.Length * 2);
+                        Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
                         image.UnlockBits(data);
                         return image;
                     }

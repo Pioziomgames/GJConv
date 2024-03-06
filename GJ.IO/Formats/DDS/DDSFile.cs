@@ -14,6 +14,7 @@ namespace DDSLib
 {
     public class DDSFile : Texture
     {
+        public const uint MAGIC = 0x20534444;
         public DDSHeader DDSHeader;
         public DXT10Header? DXT10Header;
         public Color[] Pixels;
@@ -118,8 +119,7 @@ namespace DDSLib
         }
         internal override void Read(BinaryReader reader)
         {
-            uint MAGIC = reader.ReadUInt32();
-            if (MAGIC != 0x20534444)
+            if (reader.ReadUInt32() != MAGIC)
                 throw new Exception("Not a proper DDS File");
             DDSHeader = new DDSHeader(reader);
             if (DDSHeader.PixelFormat.FourCC == DDSFourCC.DX10)
@@ -129,7 +129,7 @@ namespace DDSLib
 
         internal override void Write(BinaryWriter writer)
         {
-            writer.Write(0x20534444);
+            writer.Write(MAGIC);
             DDSHeader.Write(writer);
             DXT10Header?.Write(writer);
             WritePixelData(writer);

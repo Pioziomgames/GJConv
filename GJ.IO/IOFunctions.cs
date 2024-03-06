@@ -81,6 +81,13 @@ namespace GJ.IO
             RGBA |= (A << 12);
             writer.Write((ushort)RGBA);
         }
+        public static void WriteBGRA8888(BinaryWriter writer, Color VColor)
+        {
+            writer.Write(VColor.B);
+            writer.Write(VColor.G);
+            writer.Write(VColor.R);
+            writer.Write(VColor.A);
+        }
         public static void WriteRGBA8888(BinaryWriter writer, Color VColor)
         {
             writer.Write(VColor.R);
@@ -276,6 +283,14 @@ namespace GJ.IO
             byte A = reader.ReadByte();
 
             return Color.FromArgb(A, R, G, B);
+        }public static Color ReadBGRA8888(BinaryReader reader)
+        {
+            byte B = reader.ReadByte();
+            byte G = reader.ReadByte();
+            byte R = reader.ReadByte();
+            byte A = reader.ReadByte();
+
+            return Color.FromArgb(A, R, G, B);
         }
         public static Color ReadRGBA8880(BinaryReader reader)
         {
@@ -292,6 +307,14 @@ namespace GJ.IO
         public static byte FullByteToHalf(byte Input)
         {
             return (byte)(Input / 255.0f * 128);
+        }
+        public static Color HalfAlphaToFull(Color input)
+        {
+            return Color.FromArgb(HalfByteToFull(input.A), input);
+        }
+        public static Color FullAlphaToHalf(Color input)
+        {
+            return Color.FromArgb(FullByteToHalf(input.A), input);
         }
     }
 }
