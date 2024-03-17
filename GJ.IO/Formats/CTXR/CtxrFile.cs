@@ -9,21 +9,29 @@ namespace CtxrLib
     {
         public const uint MAGIC = 0x52545854;
         public CtxrHeader Header;
-        public Color[] ImageData;
-        public CtxrFile(ushort width, ushort height, Color least, Color most, Color[] Pixels)
+        public Color[][] ImageData;
+        public CtxrFile(ushort width, ushort height, Color colorMin, Color colorMax, Color[] Pixels)
         {
             Header = new(width, height);
-            ImageData = Pixels;
+            ImageData = new Color[1][] { Pixels };
+            Header.ColorMin = colorMin;
+            Header.ColorMax = colorMax;
         }
         public CtxrFile(ushort width, ushort height, Color[] Pixels)
         {
             Header = new(width, height, Pixels);
+            ImageData = new Color[1][] { Pixels };
+        }
+        public CtxrFile(ushort width, ushort height, Color[][] Pixels)
+        {
+            Header = new(width, height, Pixels[0]);
             ImageData = Pixels;
+            Header.MipMapCount = (ushort)Pixels.Length;
         }
         public CtxrFile(CtxrHeader header, Color[] Pixels)
         {
             Header = header;
-            ImageData = Pixels;
+            ImageData = new Color[1][] { Pixels };
         }
         public CtxrFile(string Path) : base(Path) { }
         public CtxrFile(byte[] Data) : base(Data) { }
@@ -34,26 +42,31 @@ namespace CtxrLib
                 throw new Exception("Not a proper CTXR/TXTR File");
             Header = new(reader);
 
-            uint ChunkSize = ReverseEndianness(reader.ReadUInt32());
-            if (Header.Width * Header.Height != ChunkSize / 4)
-                throw new Exception("Image data size doesn't match the expected size (unimplemented pixel format?)");
-            ImageData = new Color[ChunkSize / 4];
-            for (int i = 0; i < ImageData.Length; i++)
+            ImageData = new Color[Header.MipMapCount][];
+            for (int j = 0; j < Header.MipMapCount; j++)
             {
-                ImageData[i] = HalfAlphaToFull(ReadBGRA8888(reader));
+                uint ChunkSize = ReverseEndianness(reader.ReadUInt32());
+                ImageData[j] = new Color[ChunkSize / 4];
+                for (int i = 0; i < ImageData[j].Length; i++)
+                {
+                    ImageData[j][i] = HalfAlphaToFull(ReadBGRA8888(reader));
+                }
+                Align(reader, 32);
             }
-            Align(reader, 32);
         }
         internal override void Write(BinaryWriter writer)
         {
             writer.Write(MAGIC);
             Header.Write(writer);
-            writer.Write(ReverseEndianness((uint)ImageData.Length * 4));
-            for (int i = 0; i < ImageData.Length; i++)
+            for (int j = 0; j < Header.MipMapCount; j++)
             {
-                WriteBGRA8888(writer, FullAlphaToHalf(ImageData[i]));
+                writer.Write(ReverseEndianness((uint)ImageData[j].Length * 4));
+                for (int i = 0; i < ImageData[j].Length; i++)
+                {
+                    WriteBGRA8888(writer, FullAlphaToHalf(ImageData[j][i]));
+                }
+                Align(writer, 32);
             }
-            Align(writer, 32);
         }
     }
 }

@@ -10,6 +10,7 @@ namespace Tim2Lib
 {
     public class Tim2File : Texture
     {
+        public const uint MAGIC = 0x324D4954;
         public byte Version;
         public Tim2Alignment Alignment;
         public ushort PictureCount { get => (ushort)Pictures.Count; }
@@ -25,8 +26,7 @@ namespace Tim2Lib
         public Tim2File(BinaryReader reader) : base(reader) { }
         internal override void Read(BinaryReader reader)
         {
-            uint MAGIC = reader.ReadUInt32();
-            if (MAGIC != 0x324D4954)
+            if (reader.ReadUInt32() != MAGIC)
                 throw new Exception("Not a proper TIM2 file");
             Version = reader.ReadByte();
             Alignment = (Tim2Alignment)reader.ReadByte();
@@ -46,7 +46,7 @@ namespace Tim2Lib
         }
         internal override void Write(BinaryWriter writer)
         {
-            writer.Write(0x324D4954);
+            writer.Write(MAGIC);
             writer.Write(Version);
             writer.Write((byte)Alignment);
             writer.Write((ushort)Pictures.Count);

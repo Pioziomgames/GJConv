@@ -11,6 +11,7 @@ namespace GJConv
         static Config config;
         static void Main(string[] args)
         {
+            args = new string[] { @"\\DESKTOP-CAVQ3KJ\shared\working.txn", "png" };
             if (File.Exists(ConfigPath))
                 config = new Config(ConfigPath);
             else
@@ -224,7 +225,6 @@ namespace GJConv
 
             if (ExportPixelFormat.HasFlag(PixelFormat.Indexed))
                 NewImage = LimitColors(NewImage);
-
 
             ExportBitmap(OutputPath,NewImage,OExt, config.TmxUserId, config.TmxUserComment, config.TmxUserTextureId, config.TmxUserClutId, config.TgaFlipHorizontal, config.TgaFlipVertical, config.GimPSPOrder);
             Console.WriteLine($"{OExt.ToString().ToUpper()} file exported to: {Path.GetFullPath(OutputPath)}");

@@ -9,6 +9,7 @@ namespace GimLib
 {
     public class GimFile : Texture
     {
+        public const uint MAGIC = 776423757;
         public int Version;
         public int Style;
         public int Option;
@@ -27,7 +28,7 @@ namespace GimLib
         internal override void Read(BinaryReader reader)
         {
             int sig = reader.ReadInt32();
-            if (sig != 776423757)
+            if (sig != MAGIC)
                 throw new Exception("Not a proper Gim File");
 
             Version = reader.ReadInt32();
@@ -37,7 +38,7 @@ namespace GimLib
         }
         internal override void Write(BinaryWriter writer)
         {
-            writer.Write(776423757);
+            writer.Write(MAGIC);
             writer.Write(Version);
             writer.Write(Style);
             writer.Write(Option);

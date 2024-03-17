@@ -4,6 +4,7 @@ namespace TmxLib
 {
     public class TmxFile : Texture
     {
+        public const uint MAGIC = 0x30584D54;
         public short Flag;
         public short UserId;
         public TmxPicture Picture;
@@ -22,8 +23,7 @@ namespace TmxLib
             UserId = reader.ReadInt16();
             reader.ReadInt32(); //FileSize
 
-            int MAGIC = reader.ReadInt32();
-            if (MAGIC != 0x30584D54)
+            if (reader.ReadInt32() != MAGIC)
                 throw new Exception("Not a proper TMX file");
 
             reader.BaseStream.Position += 4;
@@ -37,7 +37,7 @@ namespace TmxLib
             writer.Write(Flag);
             writer.Write(UserId);
             writer.Write(0); //FileSize
-            writer.Write(0x30584D54);
+            writer.Write(MAGIC);
             writer.Write(0); //reserved
 
             Picture.Write(writer);

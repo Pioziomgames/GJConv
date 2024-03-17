@@ -38,6 +38,7 @@ namespace GJ.IO
             {
                 Write(writer);
                 writer.Flush();
+                writer.Close();
             }
         }
         public void Save(BinaryWriter writer)

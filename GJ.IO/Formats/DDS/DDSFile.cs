@@ -1,14 +1,7 @@
-﻿using System;
-using System.IO;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using DDSLib;
+﻿using System.Drawing;
+using GJ.IO;
 using static DDSLib.DDSEnums;
 using static DDSLib.DXT;
-using GJ.IO;
 
 namespace DDSLib
 {
@@ -53,37 +46,78 @@ namespace DDSLib
                     uint GBitMask = DDSHeader.PixelFormat.GBitMask == 0 ? 0xff00 : DDSHeader.PixelFormat.GBitMask;
                     uint BBitMask = DDSHeader.PixelFormat.BBitMask == 0 ? 0xff0000 : DDSHeader.PixelFormat.BBitMask;
                     uint ABitMask = DDSHeader.PixelFormat.ABitMask == 0 ? 0xff000000 : DDSHeader.PixelFormat.ABitMask;
+
+                    int RShift = CountBits(RBitMask);
+                    int GShift = CountBits(GBitMask);
+                    int BShift = CountBits(BBitMask);
+                    int AShift = CountBits(ABitMask);
                     for (int i = 0; i < DDSHeader.Width * DDSHeader.Height; i++)
                     {
                         uint Pixel = reader.ReadUInt32();
-                        byte R = (byte)((Pixel & RBitMask) >> CountBits(RBitMask));
-                        byte G = (byte)((Pixel & GBitMask) >> CountBits(GBitMask));
-                        byte B = (byte)((Pixel & BBitMask) >> CountBits(BBitMask));
-                        byte A = (byte)((Pixel & ABitMask) >> CountBits(ABitMask));
+                        byte R = (byte)((Pixel & RBitMask) >> RShift);
+                        byte G = (byte)((Pixel & GBitMask) >> GShift);
+                        byte B = (byte)((Pixel & BBitMask) >> BShift);
+                        byte A = (byte)((Pixel & ABitMask) >> AShift);
                         Pixels[i] = Color.FromArgb(A, R, G, B);
                     }
                     break;
                 }
                 case DDSFourCC.DXT1:
-                {
-                    Pixels = ReadDXT1Data(reader, DDSHeader.Width, DDSHeader.Height);
-                    break;
-                }
+                case DDSFourCC.BC1:
+                case DDSFourCC.BC1U:
+                    Pixels = ReadDXT1Data(reader, DDSHeader.Width, DDSHeader.Height); break;
                 case DDSFourCC.DXT3:
-                {
-                    Pixels = ReadDXT3Data(reader, DDSHeader.Width, DDSHeader.Height);
-                    break;
-                }
+                case DDSFourCC.BC2:
+                case DDSFourCC.BC2U:
+                    Pixels = ReadDXT3Data(reader, DDSHeader.Width, DDSHeader.Height); break;
                 case DDSFourCC.DXT5:
+                case DDSFourCC.BC3:
+                case DDSFourCC.BC3U:
+                    Pixels = ReadDXT5Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                case DDSFourCC.ATI1:
+                case DDSFourCC.BC4:
+                case DDSFourCC.BC4U:
+                    Pixels = ReadBC4Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                case DDSFourCC.ATI2:
+                case DDSFourCC.BC5:
+                case DDSFourCC.BC5U:
+                    Pixels = ReadBC5Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                case DDSFourCC.BC7:
+                case DDSFourCC.BC7U:
+                    ReadBC7Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                case DDSFourCC.DX10:
                 {
-                    Pixels = ReadDXT5Data(reader, DDSHeader.Width, DDSHeader.Height);
+                    switch (DXT10Header?.DxgiFormat)
+                    {
+                        case DXGIFormat.BC1_TYPELESS:
+                        case DXGIFormat.BC1_UNORM:
+                        case DXGIFormat.BC1_UNORM_SRGB:
+                            Pixels = ReadDXT1Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                        case DXGIFormat.BC2_TYPELESS:
+                        case DXGIFormat.BC2_UNORM:
+                        case DXGIFormat.BC2_UNORM_SRGB:
+                            Pixels = ReadDXT3Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                        case DXGIFormat.BC3_TYPELESS:
+                        case DXGIFormat.BC3_UNORM:
+                        case DXGIFormat.BC3_UNORM_SRGB:
+                            Pixels = ReadDXT5Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                        case DXGIFormat.BC4_TYPELESS:
+                        case DXGIFormat.BC4_UNORM:
+                        case DXGIFormat.BC4_SNORM:
+                            Pixels = ReadBC4Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                        case DXGIFormat.BC5_TYPELESS:
+                        case DXGIFormat.BC5_UNORM:
+                        case DXGIFormat.BC5_SNORM:
+                            Pixels = ReadBC5Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                        case DXGIFormat.BC7_TYPELESS:
+                        case DXGIFormat.BC7_UNORM:
+                        case DXGIFormat.BC7_UNORM_SRGB:
+                            Pixels = ReadBC7Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                        default:
+                            throw new Exception($"Unimplemented Dxgi format: {DXT10Header?.DxgiFormat}");
+                    }
                     break;
                 }
-                /*case DDSFourCC.DX10:
-                {
-                    Pixels = ReadBC7Data(reader, DDSHeader.Width, DDSHeader.Height);
-                    break;
-                }*/
                 default:
                     throw new Exception($"Unimplemented FourCC: {DDSHeader.PixelFormat.FourCC}");
             }

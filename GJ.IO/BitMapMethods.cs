@@ -30,6 +30,7 @@ namespace GJ.IO
             tmx,
             jpeg,
             jpg = 4,
+            jfif = 4,
             bmp,
             gif,
             tif,
@@ -43,6 +44,42 @@ namespace GJ.IO
         }
 #pragma warning restore CA1069 // Enums values should not be duplicated
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
+        public static ImgType CheckFormat(BinaryReader reader)
+        {
+            uint MAGIC = reader.ReadUInt32();
+            reader.BaseStream.Position = 0;
+            if (MAGIC == CtxrFile.MAGIC)
+                return ImgType.ctxr;
+            else if (MAGIC == DDSFile.MAGIC)
+                return ImgType.dds;
+            else if (MAGIC == GimFile.MAGIC)
+                return ImgType.gim;
+            else if (MAGIC == Tim2File.MAGIC)
+                return ImgType.tm2;
+            else if (MAGIC == TmxFile.MAGIC)
+                return ImgType.tmx;
+            else if (MAGIC == (uint)RmdChunkType.TextureNative)
+                return ImgType.txn;
+
+            reader.BaseStream.Position = 2;
+            byte tgaImageType = reader.ReadByte();
+            reader.BaseStream.Position = 16;
+            byte tgaBpp = reader.ReadByte();
+            reader.BaseStream.Position = 0;
+            if (Enum.IsDefined(typeof(TgaFormat), tgaImageType) &&
+                (tgaBpp == 32 || tgaBpp == 24 || tgaBpp == 16 || tgaBpp == 8))
+                return ImgType.tga;
+
+            return ImgType.png;
+        }
+        public static Bitmap[] ImportBitmaps(string path, ImgType Type)
+        {
+            return Type switch
+            {
+                ImgType.ctxr => GetCtxrBitmaps(path),
+                _ => new Bitmap[] { ImportBitmap(path, Type) },
+            };
+        }
         public static Bitmap ImportBitmap(string path, ImgType Type)
         {
             return Type switch
@@ -57,7 +94,21 @@ namespace GJ.IO
                 _ => new Bitmap(path),
             };
         }
-        public static void ExportBitmap(string path, Bitmap Image, ImgType Type, short TmxUserId = 0, string TmxUserComment = "", int TmxUserTextureId = 0, int TmxUserClutId = 0, bool TgaFlipHorizontal = false, bool TgaFlipVertical = false, bool GimPSPOrder = false)
+        public static Bitmap ImportBitmap(BinaryReader reader, ImgType Type)
+        {
+            return Type switch
+            {
+                ImgType.txn => GetTxnBitmap(reader),
+                ImgType.gim => GetGimBitmap(reader),
+                ImgType.tm2 => GetTim2Bitmap(reader),
+                ImgType.tga => GetTgaBitmap(reader),
+                ImgType.tmx => GetTmxBitmap(reader),
+                ImgType.dds => GetDdsBitmap(reader),
+                ImgType.ctxr => GetCtxrBitmap(reader),
+                _ => new Bitmap(reader.BaseStream),
+            };
+        }
+        public static void ExportBitmap(string path, Bitmap Image, ImgType Type, short TmxUserId = 0, string TmxUserComment = "", int TmxUserTextureId = 0, int TmxUserClutId = 0, bool TgaFlipHorizontal = false, bool TgaFlipVertical = false, bool GimPSPOrder = false, int MipMapCount = 1)
         {
             switch (Type)
             {
@@ -65,7 +116,7 @@ namespace GJ.IO
                 case ImgType.bmp: Image.Save(path, ImageFormat.Bmp); break;
                 case ImgType.tif: Image.Save(path, ImageFormat.Tiff); break;
                 case ImgType.jpg: Image.Save(path, ImageFormat.Jpeg); break;
-                case ImgType.tm2:Tim2FromBitmap(Image).Save(path); break;
+                case ImgType.tm2: Tim2FromBitmap(Image).Save(path); break;
                 case ImgType.gim:
                     GimFile gim = GimFromBitmap(Image);
                     if (GimPSPOrder)
@@ -98,9 +149,31 @@ namespace GJ.IO
                         writer.Close();
                     }
                     break;
-                case ImgType.ctxr: CtxrFromBitmap(Image).Save(path); break;
+                case ImgType.ctxr: CtxrFromBitmap(Image, 7).Save(path); break;
                 case ImgType.dds: DdsFromBitmap(Image).Save(path); break;
                 default: Image.Save(path,ImageFormat.Png);break;
+            }
+        }
+        public static Bitmap ImportBitmap(string path)
+        {
+            using (BinaryReader reader = new BinaryReader(File.OpenRead(path)))
+            {
+                return ImportBitmap(reader);
+            }
+        }
+        public static Bitmap ImportBitmap(BinaryReader reader)
+        {
+            ImgType type = CheckFormat(reader);
+            return ImportBitmap(reader, type);
+        }
+        public static Bitmap ImportBitmap(byte[] file)
+        {
+            using (MemoryStream stream = new MemoryStream(file))
+            {
+                using (BinaryReader reader = new BinaryReader(stream))
+                {
+                    return ImportBitmap(reader);
+                }
             }
         }
         public static byte[] GetPixelIndices(Bitmap image)
@@ -293,9 +366,13 @@ namespace GJ.IO
             image.UnlockBits(data);
             return Colors;
         }
-        public static CtxrFile CtxrFromBitmap(Bitmap image)
+        public static CtxrFile CtxrFromBitmap(Bitmap image, int MipMapCount = 1)
         {
-            CtxrFile output = new CtxrFile((ushort)image.Width, (ushort)image.Height, GetPixels(image));
+            Color[] pixels = GetPixels(image);
+            CtxrFile output =
+                MipMapCount > 1 ? new CtxrFile((ushort)image.Width, (ushort)image.Height,
+                    GenerateMipMaps(pixels, image.Width, image.Height, MipMapCount))
+                    : new CtxrFile((ushort)image.Width, (ushort)image.Height, pixels);
             return output;
         }
         public static TgaFile TgaFromBitmap(Bitmap image)
@@ -416,10 +493,20 @@ namespace GJ.IO
             RwTextureNative TXN = new(TextureName, RwPlatformId.PS2, 4354, RasterInfo, RasterData);
             return TXN;
         }
+        public static Bitmap[] GetCtxrBitmaps(string path)
+        {
+            CtxrFile InCtxr = new(path);
+            return GetCtxrBitmaps(InCtxr);
+        }
         public static Bitmap GetCtxrBitmap(string path)
         {
             CtxrFile InCtxr = new(path);
-            return GetCtxrBitmap(InCtxr);
+            return GetCtxrBitmaps(InCtxr)[0];
+        }
+        public static Bitmap GetCtxrBitmap(BinaryReader reader)
+        {
+            CtxrFile InCtxr = new(reader);
+            return GetCtxrBitmaps(InCtxr)[0];
         }
         public static Bitmap GetTxnBitmap(string path)
         {
@@ -429,14 +516,29 @@ namespace GJ.IO
                 return GetTxnBitmap(TXN);
             }
         }
+        public static Bitmap GetTxnBitmap(BinaryReader reader)
+        {
+            RwTextureNative TXN = (RwTextureNative)RmdChunk.Read(reader);
+            return GetTxnBitmap(TXN);
+        }
         public static Bitmap GetTim2Bitmap(string path)
         {
             Tim2File InTm2 = new(path);
             return GetTim2Bitmap(InTm2);
         }
+        public static Bitmap GetTim2Bitmap(BinaryReader reader)
+        {
+            Tim2File InTm2 = new(reader);
+            return GetTim2Bitmap(InTm2);
+        }
         public static Bitmap GetTgaBitmap(string path)
         {
             TgaFile InTga = new(path);
+            return GetTgaBitmap(InTga);
+        }
+        public static Bitmap GetTgaBitmap(BinaryReader reader)
+        {
+            TgaFile InTga = new(reader);
             return GetTgaBitmap(InTga);
         }
         public static Bitmap GetTim2Bitmap(byte[] Data)
@@ -451,22 +553,33 @@ namespace GJ.IO
         }
         public static Bitmap GetCtxrBitmap(CtxrFile InCtxr)
         {
-            Bitmap image = new(InCtxr.Header.Width, InCtxr.Header.Height, PixelFormat.Format32bppArgb);
-            Color[] colors = InCtxr.ImageData;
-            byte[] pixels = new byte[colors.Length * 4];
-            for (int i = 0; i < colors.Length; i++)
+            return GetCtxrBitmaps(InCtxr)[0];
+        }
+        public static Bitmap[] GetCtxrBitmaps(CtxrFile InCtxr)
+        {
+            Bitmap[] Output = new Bitmap[InCtxr.Header.MipMapCount];
+            for (int m = 0; m < InCtxr.Header.MipMapCount; m++)
             {
-                int offset = i * 4;
-                pixels[offset] = colors[i].B;
-                pixels[offset + 1] = colors[i].G;
-                pixels[offset + 2] = colors[i].R;
-                pixels[offset + 3] = colors[i].A;
-            }
+                int MipWidth = InCtxr.Header.Width >> m;
+                int MipHeight = InCtxr.Header.Height >> m;
+                Bitmap image = new(MipWidth, MipHeight, PixelFormat.Format32bppArgb);
+                Color[] colors = InCtxr.ImageData[m];
+                byte[] pixels = new byte[colors.Length * 4];
+                for (int i = 0; i < colors.Length; i++)
+                {
+                    int offset = i * 4;
+                    pixels[offset] = colors[i].B;
+                    pixels[offset + 1] = colors[i].G;
+                    pixels[offset + 2] = colors[i].R;
+                    pixels[offset + 3] = colors[i].A;
+                }
 
-            BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
-            Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
-            image.UnlockBits(data);
-            return image;
+                BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+                Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
+                image.UnlockBits(data);
+                Output[m] = image;
+            }
+            return Output;
         }
         public static Bitmap GetTxnBitmap(RwTextureNative Txn)
         {
@@ -534,6 +647,28 @@ namespace GJ.IO
                         BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
                         byte[] indexes = Txn.RasterData.ImageIndexData;
                         Marshal.Copy(indexes, 0, data.Scan0, indexes.Length);
+                        ColorPalette palette = image.Palette;
+                        for (int i = 0; i < Txn.RasterData.PaletteData.Length; i++)
+                            palette.Entries[i] = Txn.RasterData.PaletteData[i];
+                        image.Palette = palette;
+                        image.UnlockBits(data);
+                        return image;
+                    }
+                case 4:
+                    {
+                        Bitmap image = new(Txn.RasterInfo.Width, Txn.RasterInfo.Height, PixelFormat.Format4bppIndexed);
+                        BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, image.PixelFormat);
+                        int byteCount = (int)Math.Ceiling(Txn.RasterData.ImageIndexData.Length / 2.0);
+                        byte[] pixels = new byte[byteCount];
+                        for (int i = 0; i < Txn.RasterData.ImageIndexData.Length; i++)
+                        {
+                            byte colorIndex = Txn.RasterData.ImageIndexData[i];
+                            int byteIndex = i / 2;
+                            int shift = (i % 2 == 0) ? 0 : 4;
+                            pixels[byteIndex] |= (byte)(colorIndex << shift);
+                        }
+
+                        Marshal.Copy(pixels.ToArray(), 0, data.Scan0, pixels.Length);
                         ColorPalette palette = image.Palette;
                         for (int i = 0; i < Txn.RasterData.PaletteData.Length; i++)
                             palette.Entries[i] = Txn.RasterData.PaletteData[i];
@@ -744,6 +879,11 @@ namespace GJ.IO
             GimFile InGim = new(path);
             return GetGimBitmap(InGim);
         }
+        public static Bitmap GetGimBitmap(BinaryReader reader)
+        {
+            GimFile InGim = new(reader);
+            return GetGimBitmap(InGim);
+        }
         public static Bitmap GetGimBitmap(byte[] Data)
         {
             GimFile InGim = new(Data);
@@ -905,9 +1045,19 @@ namespace GJ.IO
             DDSFile InDds = new(path);
             return GetDdsBitmap(InDds);
         }
+        public static Bitmap GetDdsBitmap(BinaryReader reader)
+        {
+            DDSFile InDds = new(reader);
+            return GetDdsBitmap(InDds);
+        }
         public static Bitmap GetTmxBitmap(string path)
         {
             TmxFile InTmx = new(path);
+            return GetTmxBitmap(InTmx);
+        }
+        public static Bitmap GetTmxBitmap(BinaryReader reader)
+        {
+            TmxFile InTmx = new(reader);
             return GetTmxBitmap(InTmx);
         }
         public static Bitmap GetDdsBitmap(DDSFile InDds)
@@ -1241,6 +1391,64 @@ namespace GJ.IO
 
             return solidifiedBitmap;
         }
+        public static Color[][] GenerateMipMaps(Color[] colors, int width, int height, int mipMapCount)
+        {
+            Color[][] mipMaps = new Color[mipMapCount][];
 
+            mipMaps[0] = colors;
+
+            for (int i = 1; i < mipMapCount; i++)
+            {
+                int newWidth = width >> i;
+                int newHeight = height >> i;
+
+                mipMaps[i] = GenerateMipMapLevel(mipMaps[i - 1], newWidth, newHeight);
+            }
+
+            return mipMaps;
+        }
+
+        private static Color[] GenerateMipMapLevel(Color[] previousMipMap, int width, int height)
+        {
+            Color GetPixel(Color[] colors, int width, int height, int x, int y)
+            {
+                x = Math.Max(0, Math.Min(x, width - 1));
+                y = Math.Max(0, Math.Min(y, height - 1));
+                return colors[y * width + x];
+            }
+
+            Color[] mipMap = new Color[width * height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    Color averageColor = AverageColor(
+                        GetPixel(previousMipMap, width, height, x * 2, y * 2),
+                        GetPixel(previousMipMap, width, height, x * 2 + 1, y * 2),
+                        GetPixel(previousMipMap, width, height, x * 2, y * 2 + 1),
+                        GetPixel(previousMipMap, width, height, x * 2 + 1, y * 2 + 1));
+                    mipMap[y * width + x] = averageColor;
+                }
+            }
+
+            return mipMap;
+        }
+        private static Color AverageColor(params Color[] colors)
+        {
+            float totalR = 0f, totalG = 0f, totalB = 0f, totalA = 0f;
+
+            foreach (Color color in colors)
+            {
+                totalR += color.R;
+                totalG += color.G;
+                totalB += color.B;
+                totalA += color.A;
+            }
+
+            int count = colors.Length;
+            return Color.FromArgb((byte)(totalA / count), (byte)(totalR / count),
+                (byte)(totalG / count), (byte)(totalB / count));
+        }
     }
 }
