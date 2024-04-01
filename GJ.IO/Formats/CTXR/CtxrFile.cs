@@ -2,6 +2,7 @@
 using System.Drawing;
 using static System.Buffers.Binary.BinaryPrimitives;
 using static GJ.IO.IOFunctions;
+using System.Drawing.Imaging;
 
 namespace CtxrLib
 {
@@ -67,6 +68,41 @@ namespace CtxrLib
                 }
                 Align(writer, 32);
             }
+        }
+
+        public override int GetWidth()
+        {
+            return Header.Width;
+        }
+
+        public override int GetHeight()
+        {
+            return Header.Height;
+        }
+
+        public override int GetMipMapCount()
+        {
+            return Header.MipMapCount;
+        }
+
+        public override PixelFormat GetPixelFormat()
+        {
+            return PixelFormat.Format32bppArgb;
+        }
+
+        public override Color[] GetPalette()
+        {
+            return Array.Empty<Color>();
+        }
+
+        public override Color[] GetPixelData()
+        {
+            return ImageData[0];
+        }
+
+        public override byte[] GetIndexData()
+        {
+            return Array.Empty<byte>();
         }
     }
 }

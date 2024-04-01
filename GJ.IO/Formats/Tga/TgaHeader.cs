@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace TgaLib
 {
-    public enum TgaFormat
+    public enum TgaFormat : byte
     {
         None         = 0x00,
         Indexed      = 0x01,

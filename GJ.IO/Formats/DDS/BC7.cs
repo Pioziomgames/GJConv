@@ -49,7 +49,7 @@ namespace DDSLib
         static int[] aWeight3 = new int[] { 0, 9, 18, 27, 37, 46, 55, 64 };
         static int[] aWeight4 = new int[] { 0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64 };
 
-        static readonly int[][] Subsets2PartitionTable = {
+        static readonly int[][] BC7Subsets2PartitionTable = {
             new[] {0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1},
             new[] {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1},
             new[] {0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1},
@@ -115,7 +115,7 @@ namespace DDSLib
             new[] {0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0},
             new[] {0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1}
         };
-        static readonly int[][] Subsets3PartitionTable = {
+        static readonly int[][] BC7Subsets3PartitionTable = {
             new[] {0, 0, 1, 1, 0, 0, 1, 1, 0, 2, 2, 1, 2, 2, 2, 2},
             new[] {0, 0, 0, 1, 0, 0, 1, 1, 2, 2, 1, 1, 2, 2, 2, 1},
             new[] {0, 0, 0, 0, 2, 0, 0, 1, 2, 2, 1, 1, 2, 2, 1, 1},
@@ -181,7 +181,7 @@ namespace DDSLib
             new[] {0, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
             new[] {0, 1, 1, 1, 2, 0, 1, 1, 2, 2, 0, 1, 2, 2, 2, 0},
         };
-        static readonly int[] Subsets2AnchorIndices = {
+        static readonly int[] BC7Subsets2AnchorIndices = {
             15, 15, 15, 15, 15, 15, 15, 15,
             15, 15, 15, 15, 15, 15, 15, 15,
             15, 2, 8, 2, 2, 8, 8, 15,
@@ -191,7 +191,7 @@ namespace DDSLib
             6, 2, 6, 8, 15, 15, 2, 2,
             15, 15, 15, 15, 15, 2, 2, 15
         };
-        static readonly int[] Subsets3AnchorIndices2 = {
+        static readonly int[] BC7Subsets3AnchorIndices2 = {
             3, 3, 15, 15, 8, 3, 15, 15,
             8, 8, 6, 6, 6, 5, 3, 3,
             3, 3, 8, 15, 3, 3, 6, 10,
@@ -201,7 +201,7 @@ namespace DDSLib
             3, 15, 5, 5, 5, 8, 5, 10,
             5, 10, 8, 13, 15, 12, 3, 3
         };
-        static readonly int[] Subsets3AnchorIndices3 = {
+        static readonly int[] BC7Subsets3AnchorIndices3 = {
             15, 8, 8, 3, 15, 15, 3, 8,
             15, 15, 15, 15, 15, 15, 15, 8,
             15, 8, 15, 3, 15, 8, 15, 8,
@@ -216,17 +216,7 @@ namespace DDSLib
             byte mode = ExtractMode(blockData[0]);
 
             if (mode == 8)
-            {
-                Color n = Color.FromArgb(0);
-                for (int y = 0; y < 4 && (startY + y) < height; y++)
-                {
-                    for (int x = 0; x < 4 && (startX + x) < width; x++)
-                    {
-                        colors[(startY + y) * width + (startX + x)] = n;
-                    }
-                }
-                return;
-            }
+                return; //Colors should already be set to 0
 
             int numSubsets = 1;
             if (mode == 0 || mode == 2)
@@ -361,8 +351,8 @@ namespace DDSLib
                 {
                     int subsetIndex = numSubsets switch
                     {
-                        2 => Subsets2PartitionTable[partitionIndex][ind],
-                        3 => Subsets3PartitionTable[partitionIndex][ind],
+                        2 => BC7Subsets2PartitionTable[partitionIndex][ind],
+                        3 => BC7Subsets3PartitionTable[partitionIndex][ind],
                         _ => 0,
                     };
 
@@ -434,10 +424,10 @@ namespace DDSLib
         {
             if (index == 0)
                 return numBits-1;
-            if (numSubsets == 2 && Subsets2AnchorIndices[partition] == index)
+            if (numSubsets == 2 && BC7Subsets2AnchorIndices[partition] == index)
                 return numBits - 1;
-            else if (numSubsets == 3 && (index == Subsets3AnchorIndices2[partition]
-                || index == Subsets3AnchorIndices3[partition]))
+            else if (numSubsets == 3 && (index == BC7Subsets3AnchorIndices2[partition]
+                || index == BC7Subsets3AnchorIndices3[partition]))
                 return numBits - 1;
             return numBits;
         }
@@ -449,15 +439,15 @@ namespace DDSLib
                 return numBits * index - 1;
             else if (numSubsets == 2)
             {
-                if (index <= Subsets2AnchorIndices[partition])
+                if (index <= BC7Subsets2AnchorIndices[partition])
                     return numBits * index - 1;
                 else
                     return numBits * index - 2;
             }
             else
             {
-                int anch2 = Subsets3AnchorIndices2[partition];
-                int anch3 = Subsets3AnchorIndices3[partition];
+                int anch2 = BC7Subsets3AnchorIndices2[partition];
+                int anch3 = BC7Subsets3AnchorIndices3[partition];
 
                 if (index <= anch2 && index <= anch3)
                     return numBits * index - 1;

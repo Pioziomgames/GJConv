@@ -1,5 +1,6 @@
 ﻿using GJ.IO;
 using System.Drawing;
+using System.Drawing.Imaging;
 
 namespace TgaLib
 {
@@ -95,6 +96,61 @@ namespace TgaLib
             if (Palette != null)
                 Palette.Write(writer, Header);
             ImageData.Write(writer, Header);
+        }
+
+        public override int GetWidth()
+        {
+            return Header.Width;
+        }
+
+        public override int GetHeight()
+        {
+            return Header.Height;
+        }
+
+        public override int GetMipMapCount()
+        {
+            return 1;
+        }
+
+        public override PixelFormat GetPixelFormat()
+        {
+            switch (Header.ImageFormat)
+            {
+                case TgaFormat.GrayScale:
+                case TgaFormat.RLEGrayScale:
+                    return PixelFormat.Format16bppGrayScale;
+                case TgaFormat.Indexed:
+                case TgaFormat.RLEIndexed:
+                case TgaFormat.HDRLEIndexed:
+                    return PixelFormat.Format8bppIndexed;
+                default:
+                    return PixelFormat.Format32bppArgb;
+            }
+        }
+
+        public override Color[] GetPalette()
+        {
+            if (Palette != null)
+                return Palette.Colors;
+            else
+                return Array.Empty<Color>();
+        }
+
+        public override Color[] GetPixelData()
+        {
+            if (ImageData.Pixels != null)
+                return GetAllPixels();
+            else
+                return GetPixelDataFromIndexData();
+        }
+
+        public override byte[] GetIndexData()
+        {
+            if (ImageData.PixelIndexes != null)
+                return GetAllIndexes();
+            else
+                return Array.Empty<byte>();
         }
     }
 }

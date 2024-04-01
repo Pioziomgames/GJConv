@@ -1,4 +1,5 @@
 ﻿using System.Drawing;
+using System.Drawing.Imaging;
 using GJ.IO;
 using static DDSLib.DDSEnums;
 using static DDSLib.DXT;
@@ -109,6 +110,11 @@ namespace DDSLib
                         case DXGIFormat.BC5_UNORM:
                         case DXGIFormat.BC5_SNORM:
                             Pixels = ReadBC5Data(reader, DDSHeader.Width, DDSHeader.Height); break;
+                        /*case DXGIFormat.BC6H_SF16:
+                            Pixels = ReadBC6Data(reader, DDSHeader.Width, DDSHeader.Height, true); break;
+                        case DXGIFormat.BC6H_UF16:
+                        case DXGIFormat.BC6H_TYPELESS:
+                            Pixels = ReadBC6Data(reader, DDSHeader.Width, DDSHeader.Height, false); break;*/
                         case DXGIFormat.BC7_TYPELESS:
                         case DXGIFormat.BC7_UNORM:
                         case DXGIFormat.BC7_UNORM_SRGB:
@@ -154,7 +160,7 @@ namespace DDSLib
         internal override void Read(BinaryReader reader)
         {
             if (reader.ReadUInt32() != MAGIC)
-                throw new Exception("Not a proper DDS File");
+                throw new Exception("Not a proper DDS file");
             DDSHeader = new DDSHeader(reader);
             if (DDSHeader.PixelFormat.FourCC == DDSFourCC.DX10)
                 DXT10Header = new DXT10Header(reader);
@@ -167,6 +173,52 @@ namespace DDSLib
             DDSHeader.Write(writer);
             DXT10Header?.Write(writer);
             WritePixelData(writer);
+        }
+
+        public override int GetWidth()
+        {
+            return (int)DDSHeader.Width;
+        }
+
+        public override int GetHeight()
+        {
+            return (int)DDSHeader.Height;
+        }
+
+        public override int GetMipMapCount()
+        {
+            return (int)DDSHeader.MipMapCount;
+        }
+
+        public override PixelFormat GetPixelFormat()
+        {
+            /*if (DXT10Header != null)
+            {
+                switch(DXT10Header.DxgiFormat)
+                {
+                    default:
+                        return PixelFormat.Format32bppArgb;
+                }
+            }
+            else
+            {*/
+                return PixelFormat.Format32bppArgb;
+            //}
+        }
+
+        public override Color[] GetPalette()
+        {
+            return Array.Empty<Color>();
+        }
+
+        public override Color[] GetPixelData()
+        {
+            return Pixels;
+        }
+
+        public override byte[] GetIndexData()
+        {
+            return Array.Empty<byte>();
         }
     }
     public class DDSHeader

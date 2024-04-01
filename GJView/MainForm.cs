@@ -28,6 +28,7 @@ namespace GJView
             dialog.Filter = "Supported Formats|*.";
 
             dialog.Filter += string.Join(";*.", extensions);
+            dialog.Filter += "|All files|*.*";
         }
         public MainForm(string Path)
             : this()
@@ -36,28 +37,51 @@ namespace GJView
         }
         private void OpenFile(string path)
         {
-            try
-            {
-                string se = Path.GetExtension(path)[1..].ToLower();
+            //try
+            //{
+                //string se = Path.GetExtension(path)[1..].ToLower();
 
                 if (!File.Exists(path))
                     return;
-                if (!Enum.TryParse(se, out ImgType Ext))
-                    return;
-                Bitmap image = ImportBitmap(path, Ext);
+                //if (!Enum.TryParse(se, out ImgType Ext))
+                //    return;
+                Bitmap image = ImportBitmap(path);
                 TexView.SetTexture(image);
-
+                
                 Text = $"{Program.WindowText} - {Path.GetFileName(path)} {image.Width}x{image.Height}";
-            }
-            catch { }
+            //}
+            //catch { }
         }
         private void openToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            
             if (dialog.ShowDialog() == DialogResult.OK)
                 OpenFile(dialog.FileName);
         }
+        private void openPaletteToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (TexView.CurrentTexture == null || !TexView.CurrentTexture.PixelFormat.HasFlag(System.Drawing.Imaging.PixelFormat.Indexed))
+                return;
 
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                Bitmap image = ImportBitmap(dialog.FileName);
+                TexView.SetPalette(image.Palette);
+            }
+        }
+        private void closeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Text = Program.WindowText;
+            TexView.SetTexture(null);
+        }
+        private void closePaletteToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            TexView.SetPalette(null);
+        }
+        private void helpToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Help NewHelp = new Help();
+            NewHelp.ShowDialog();
+        }
         private void MainForm_DragDrop(object sender, DragEventArgs e)
         {
             try
@@ -76,17 +100,6 @@ namespace GJView
             e.Effect = DragDropEffects.Move;
         }
 
-        private void helpToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            Help NewHelp = new Help();
-            NewHelp.ShowDialog();
-        }
-
-        private void closeToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            Text = Program.WindowText;
-            TexView.SetTexture(null);
-        }
         private class StripColorsRenderer : ToolStripProfessionalRenderer
         {
             public StripColorsRenderer() : base(new StripColors()) { }
@@ -108,5 +121,6 @@ namespace GJView
             public override Color ImageMarginGradientMiddle => MenuItemSelected;
             public override Color ImageMarginGradientEnd => MenuItemSelected;
         }
+
     }
 }

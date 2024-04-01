@@ -11,7 +11,6 @@ namespace GJConv
         static Config config;
         static void Main(string[] args)
         {
-            args = new string[] { @"\\DESKTOP-CAVQ3KJ\shared\working.txn", "png" };
             if (File.Exists(ConfigPath))
                 config = new Config(ConfigPath);
             else
@@ -114,15 +113,17 @@ namespace GJConv
                 config.TmxUserComment = Path.GetFileNameWithoutExtension(OutputPath);
             
 
-            string se = Path.GetExtension(InputPath)[1..].ToLower();
+            string se = InputPath.Contains('.') ? Path.GetExtension(InputPath)[1..].ToLower() : "";
 
-            if (!Enum.TryParse(se, out ImgType Ext))
-                throw new Exception($"Unsupported extension: {se}");
+            ImgType Ext = ImgType.png;
+            Enum.TryParse(se, out Ext);
+            //if (!Enum.TryParse(se, out ImgType Ext))
+            //    throw new Exception($"Unsupported extension: {se}");
 
             Console.WriteLine($"Importing: {Path.GetFullPath(InputPath)}...");
             Bitmap NewImage; 
             PixelFormat ExportPixelFormat;
-            using (Bitmap image = ImportBitmap(args[0], Ext))
+            using (Bitmap image = ImportBitmap(args[0]))
             {
                 ExportPixelFormat = image.PixelFormat; //Create a new image to allow for easier editing and free the lock on the input file
                 NewImage = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppArgb);

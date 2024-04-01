@@ -101,6 +101,12 @@ namespace GJ.IO
             writer.Write(VColor.G);
             writer.Write(VColor.B);
         }
+        public static void WriteBGRA8880(BinaryWriter writer, Color VColor)
+        {
+            writer.Write(VColor.B);
+            writer.Write(VColor.G);
+            writer.Write(VColor.R);
+        }
         public static void WritePSMCT32(BinaryWriter writer, Color VColor)
         {
             writer.Write((uint)(VColor.R | (VColor.G << 8) | (VColor.B << 16) | (FullByteToHalf(VColor.A) << 24)));
@@ -283,7 +289,8 @@ namespace GJ.IO
             byte A = reader.ReadByte();
 
             return Color.FromArgb(A, R, G, B);
-        }public static Color ReadBGRA8888(BinaryReader reader)
+        }
+        public static Color ReadBGRA8888(BinaryReader reader)
         {
             byte B = reader.ReadByte();
             byte G = reader.ReadByte();
@@ -291,6 +298,14 @@ namespace GJ.IO
             byte A = reader.ReadByte();
 
             return Color.FromArgb(A, R, G, B);
+        }
+        public static Color ReadBGRA8880(BinaryReader reader)
+        {
+            byte B = reader.ReadByte();
+            byte G = reader.ReadByte();
+            byte R = reader.ReadByte();
+
+            return Color.FromArgb(R, G, B);
         }
         public static Color ReadRGBA8880(BinaryReader reader)
         {

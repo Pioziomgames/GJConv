@@ -1,9 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing.Drawing2D;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 
 namespace GJView
 {
@@ -15,6 +11,8 @@ namespace GJView
         public bool Filtering = true;
         private float ViewScale;
         private Point LastMouseLocation;
+        private ColorPalette? RealPalette;
+        private ColorPalette? OverwritePalette;
         public TextureView()
         {
             InitializeComponent();
@@ -121,6 +119,26 @@ namespace GJView
         {
             ResetScale();
             CurrentTexture = Image;
+            RealPalette = CurrentTexture?.Palette;
+            if (CurrentTexture != null && OverwritePalette != null)
+                CurrentTexture.Palette = OverwritePalette;
+            Invalidate();
+        }
+        public void SetPalette(ColorPalette? palette)
+        {
+            if (palette == null || palette?.Entries.Length == 0)
+            {
+                OverwritePalette = null;
+                if (CurrentTexture != null && RealPalette != null)
+                    CurrentTexture.Palette = RealPalette;
+            }
+            else
+            {
+                OverwritePalette = palette;
+                if (OverwritePalette != null && CurrentTexture != null)
+                    CurrentTexture.Palette = OverwritePalette;
+            }
+            Invalidate();
         }
     }
 }
